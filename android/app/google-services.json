@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "184273620099",
+    "project_id": "assetto-7cad8",
+    "storage_bucket": "assetto-7cad8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184273620099:android:1f425a1374733bc058dfb6",
+        "android_client_info": {
+          "package_name": "com.alphastate.assetto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5Xxjg1PeuH2noYmgOWSi85Rr0nzkldfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
