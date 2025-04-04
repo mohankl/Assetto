@@ -1,74 +1,131 @@
 class Tenant {
   final String id;
   final String name;
-  final String email;
+  final String? remarks;
   final String phone;
-  final String? currentAssetId;
-  final DateTime leaseStartDate;
-  final DateTime leaseEndDate;
-  final double monthlyRent;
-  final String status; // 'active', 'past', 'pending'
-  final DateTime createdAt;
-  final DateTime updatedAt;
+  final String? aadharNumber;
+  final String? aadharImage;
+  final String assetId;
+  final int? leaseStart;
+  final int? leaseEnd;
+  final double? advanceAmount;
+  final int createdAt;
+  final int updatedAt;
+  final Map<String, dynamic> additionalData;
 
   Tenant({
     required this.id,
     required this.name,
-    required this.email,
+    this.remarks,
     required this.phone,
-    this.currentAssetId,
-    required this.leaseStartDate,
-    required this.leaseEndDate,
-    required this.monthlyRent,
-    required this.status,
+    this.aadharNumber,
+    this.aadharImage,
+    required this.assetId,
+    this.leaseStart,
+    this.leaseEnd,
+    this.advanceAmount,
     required this.createdAt,
     required this.updatedAt,
+    this.additionalData = const {},
   });
 
-  // Convert Tenant to Map for Firebase
+  factory Tenant.empty() {
+    return Tenant(
+      id: '',
+      name: 'Unknown Tenant',
+      remarks: null,
+      phone: '',
+      aadharNumber: null,
+      aadharImage: null,
+      assetId: '',
+      leaseStart: null,
+      leaseEnd: null,
+      advanceAmount: null,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      additionalData: {},
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
-      'email': email,
+      'remarks': remarks,
       'phone': phone,
-      'currentAssetId': currentAssetId,
-      'leaseStartDate': leaseStartDate.toIso8601String(),
-      'leaseEndDate': leaseEndDate.toIso8601String(),
-      'monthlyRent': monthlyRent,
-      'status': status,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
+      'aadhar_number': aadharNumber,
+      'aadhar_image': aadharImage,
+      'asset_id': assetId,
+      'lease_start': leaseStart,
+      'lease_end': leaseEnd,
+      'advance_amount': advanceAmount,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+      ...additionalData,
     };
   }
 
-  // Create Tenant from Firebase Map
   factory Tenant.fromMap(Map<String, dynamic> map) {
-    try {
-      return Tenant(
-        id: map['id'] as String? ?? '',
-        name: map['name'] as String? ?? '',
-        email: map['email'] as String? ?? '',
-        phone: map['phone'] as String? ?? '',
-        currentAssetId: map['currentAssetId'] as String?,
-        leaseStartDate: map['leaseStartDate'] != null
-            ? DateTime.parse(map['leaseStartDate'] as String)
-            : DateTime.now(),
-        leaseEndDate: map['leaseEndDate'] != null
-            ? DateTime.parse(map['leaseEndDate'] as String)
-            : DateTime.now().add(const Duration(days: 365)),
-        monthlyRent: (map['monthlyRent'] as num?)?.toDouble() ?? 0.0,
-        status: map['status'] as String? ?? 'pending',
-        createdAt: map['createdAt'] != null
-            ? DateTime.parse(map['createdAt'] as String)
-            : DateTime.now(),
-        updatedAt: map['updatedAt'] != null
-            ? DateTime.parse(map['updatedAt'] as String)
-            : DateTime.now(),
-      );
-    } catch (e) {
-      print('Error creating Tenant from map: $e');
-      rethrow;
-    }
+    return Tenant(
+      id: map['id'] ?? '',
+      name: map['name'] ?? 'Unnamed Tenant',
+      remarks: map['remarks'],
+      phone: map['phone'] ?? '',
+      aadharNumber: map['aadhar_number'],
+      aadharImage: map['aadhar_image'],
+      assetId: map['asset_id'] ?? '',
+      leaseStart: map['lease_start'],
+      leaseEnd: map['lease_end'],
+      advanceAmount: map['advance_amount'] != null
+          ? (map['advance_amount'] as num).toDouble()
+          : null,
+      createdAt: map['created_at'] ?? DateTime.now().millisecondsSinceEpoch,
+      updatedAt: map['updated_at'] ?? DateTime.now().millisecondsSinceEpoch,
+      additionalData: Map<String, dynamic>.from(map)
+        ..remove('id')
+        ..remove('name')
+        ..remove('remarks')
+        ..remove('phone')
+        ..remove('aadhar_number')
+        ..remove('aadhar_image')
+        ..remove('asset_id')
+        ..remove('lease_start')
+        ..remove('lease_end')
+        ..remove('advance_amount')
+        ..remove('created_at')
+        ..remove('updated_at'),
+    );
+  }
+
+  Tenant copyWith({
+    String? id,
+    String? name,
+    String? remarks,
+    String? phone,
+    String? aadharNumber,
+    String? aadharImage,
+    String? assetId,
+    int? leaseStart,
+    int? leaseEnd,
+    double? advanceAmount,
+    int? createdAt,
+    int? updatedAt,
+    Map<String, dynamic>? additionalData,
+  }) {
+    return Tenant(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      remarks: remarks ?? this.remarks,
+      phone: phone ?? this.phone,
+      aadharNumber: aadharNumber ?? this.aadharNumber,
+      aadharImage: aadharImage ?? this.aadharImage,
+      assetId: assetId ?? this.assetId,
+      leaseStart: leaseStart ?? this.leaseStart,
+      leaseEnd: leaseEnd ?? this.leaseEnd,
+      advanceAmount: advanceAmount ?? this.advanceAmount,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      additionalData: additionalData ?? this.additionalData,
+    );
   }
 }

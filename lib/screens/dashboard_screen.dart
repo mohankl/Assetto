@@ -1,136 +1,176 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/asset.dart';
-import '../models/tenant.dart';
-import '../models/transaction.dart';
-import '../providers/firebase_provider.dart';
+import '../providers/data_provider.dart';
+import 'package:intl/intl.dart';
+import 'dart:developer' as developer;
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Initialize data when the screen is first loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<DataProvider>().initialize();
+    });
+  }
+
+  Future<void> _refreshData() async {
+    await context.read<DataProvider>().initialize();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final firebaseService = context.watch<FirebaseProvider>().firebaseService;
+    final dataProvider = context.watch<DataProvider>();
+    final assets = dataProvider.assets;
+    final tenants = dataProvider.tenants;
+    final transactions = dataProvider.transactions;
+
+    // Calculate statistics
+    final occupiedUnits = assets
+        .where((asset) => asset.status.toLowerCase() == 'occupied')
+        .length;
+    final totalUnits = assets.length;
+    final occupancyRate = totalUnits > 0
+        ? (occupiedUnits / totalUnits * 100).toStringAsFixed(1)
+        : '0';
+
+    final upcomingLeaseEnds = tenants
+        .where(
+          (tenant) =>
+              tenant.leaseEnd != null &&
+              DateTime.fromMillisecondsSinceEpoch(tenant.leaseEnd!)
+                  .isBefore(DateTime.now().add(const Duration(days: 30))),
+        )
+        .length;
+
+    final totalIncome = transactions
+        .where((t) => t.type.toLowerCase() == 'income')
+        .fold(0.0, (sum, t) => sum + t.amount);
+
+    final totalExpenses = transactions
+        .where((t) => t.type.toLowerCase() == 'expense')
+        .fold(0.0, (sum, t) => sum + t.amount);
+
+    final netIncome = totalIncome - totalExpenses;
+
+    developer.log('Dashboard Statistics:');
+    developer.log('Total Income: $totalIncome');
+    developer.log('Total Expenses: $totalExpenses');
+    developer.log('Net Income: $netIncome');
+    developer.log('Total Transactions: ${transactions.length}');
+
+    final currencyFormat = NumberFormat.currency(symbol: '₹');
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Overview',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            StreamBuilder<List<Asset>>(
-              stream: firebaseService.getAssets(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CircularProgressIndicator();
-                }
-
-                final assets = snapshot.data ?? [];
-                final totalAssets = assets.length;
-                final availableAssets =
-                    assets.where((a) => a.status == 'available').length;
-                final rentedAssets =
-                    assets.where((a) => a.status == 'rented').length;
-                final maintenanceAssets =
-                    assets.where((a) => a.status == 'maintenance').length;
-
-                return _buildStatCard(
-                  'Assets',
-                  [
-                    _buildStatItem('Total', totalAssets.toString()),
-                    _buildStatItem('Available', availableAssets.toString()),
-                    _buildStatItem('Rented', rentedAssets.toString()),
-                    _buildStatItem('Maintenance', maintenanceAssets.toString()),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            StreamBuilder<List<Tenant>>(
-              stream: firebaseService.getTenants(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CircularProgressIndicator();
-                }
-
-                final tenants = snapshot.data ?? [];
-                final activeTenants =
-                    tenants.where((t) => t.status == 'active').length;
-                final pastTenants =
-                    tenants.where((t) => t.status == 'past').length;
-                final pendingTenants =
-                    tenants.where((t) => t.status == 'pending').length;
-
-                return _buildStatCard(
-                  'Tenants',
-                  [
-                    _buildStatItem('Total', tenants.length.toString()),
-                    _buildStatItem('Active', activeTenants.toString()),
-                    _buildStatItem('Past', pastTenants.toString()),
-                    _buildStatItem('Pending', pendingTenants.toString()),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            StreamBuilder<List<Transaction>>(
-              stream: firebaseService.getTransactions(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const CircularProgressIndicator();
-                }
-
-                final transactions = snapshot.data ?? [];
-                final totalTransactions = transactions.length;
-                final completedTransactions =
-                    transactions.where((t) => t.status == 'completed').length;
-                final pendingTransactions =
-                    transactions.where((t) => t.status == 'pending').length;
-                final failedTransactions =
-                    transactions.where((t) => t.status == 'failed').length;
-
-                return _buildStatCard(
-                  'Transactions',
-                  [
-                    _buildStatItem('Total', totalTransactions.toString()),
-                    _buildStatItem(
-                        'Completed', completedTransactions.toString()),
-                    _buildStatItem('Pending', pendingTransactions.toString()),
-                    _buildStatItem('Failed', failedTransactions.toString()),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child: dataProvider.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : dataProvider.error != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Error: ${dataProvider.error}',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _refreshData,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  )
+                : SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSummaryCard(
+                          'Properties Overview',
+                          [
+                            _buildStatRow(
+                              'Total Properties',
+                              totalUnits.toString(),
+                              Icons.home,
+                            ),
+                            _buildStatRow(
+                              'Occupancy Rate',
+                              '$occupancyRate%',
+                              Icons.percent,
+                            ),
+                            _buildStatRow(
+                              'Occupied Units',
+                              occupiedUnits.toString(),
+                              Icons.people,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSummaryCard(
+                          'Financial Summary',
+                          [
+                            _buildStatRow(
+                              'Total Income',
+                              currencyFormat.format(totalIncome),
+                              Icons.arrow_upward,
+                              color: Colors.green,
+                            ),
+                            _buildStatRow(
+                              'Total Expenses',
+                              currencyFormat.format(totalExpenses),
+                              Icons.arrow_downward,
+                              color: Colors.red,
+                            ),
+                            _buildStatRow(
+                              'Net Income',
+                              currencyFormat.format(netIncome),
+                              Icons.account_balance,
+                              color: netIncome >= 0 ? Colors.green : Colors.red,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSummaryCard(
+                          'Alerts',
+                          [
+                            _buildStatRow(
+                              'Upcoming Lease Ends',
+                              upcomingLeaseEnds.toString(),
+                              Icons.warning,
+                              color: upcomingLeaseEnds > 0
+                                  ? Colors.orange
+                                  : Colors.green,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
       ),
     );
   }
 
-  Widget _buildStatCard(String title, List<Widget> stats) {
+  Widget _buildSummaryCard(String title, List<Widget> children) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -140,40 +180,42 @@ class DashboardScreen extends StatelessWidget {
             Text(
               title,
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              children: stats,
-            ),
+            const SizedBox(height: 16),
+            ...children,
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+  Widget _buildStatRow(String label, String value, IconData icon,
+      {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 16),
+            ),
           ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.grey,
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -2,57 +2,111 @@ class Asset {
   final String id;
   final String name;
   final String address;
+  final String type;
+  final String status;
+  final String unitNumber;
+  final String? imageUrl;
   final double rentAmount;
-  final String status; // 'available', 'rented', 'maintenance'
-  final String? currentTenantId;
-  final DateTime createdAt;
-  final DateTime updatedAt;
+  final int createdAt;
+  final int updatedAt;
+  final Map<String, dynamic> additionalData;
 
   Asset({
     required this.id,
     required this.name,
     required this.address,
-    required this.rentAmount,
+    required this.type,
     required this.status,
-    this.currentTenantId,
+    required this.unitNumber,
+    this.imageUrl,
+    required this.rentAmount,
     required this.createdAt,
     required this.updatedAt,
+    this.additionalData = const {},
   });
 
-  // Convert Asset to Map for Firebase
+  factory Asset.empty() {
+    return Asset(
+      id: '',
+      name: 'Unnamed Property',
+      address: 'No address provided',
+      type: 'Apartment',
+      status: 'Vacant',
+      unitNumber: '',
+      imageUrl: null,
+      rentAmount: 0.0,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
       'address': address,
-      'rentAmount': rentAmount,
+      'type': type,
       'status': status,
-      'currentTenantId': currentTenantId,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
+      'unit_number': unitNumber,
+      'image_url': imageUrl,
+      'rent_amount': rentAmount,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+      ...additionalData,
     };
   }
 
-  // Create Asset from Firebase Map
   factory Asset.fromMap(Map<String, dynamic> map) {
-    try {
-      return Asset(
-        id: map['id'] as String? ?? '',
-        name: map['name'] as String? ?? '',
-        address: map['address'] as String? ?? '',
-        rentAmount: (map['rentAmount'] as num?)?.toDouble() ?? 0.0,
-        status: map['status'] as String? ?? 'available',
-        currentTenantId: map['currentTenantId'] as String?,
-        createdAt: map['createdAt'] != null
-            ? DateTime.parse(map['createdAt'] as String)
-            : DateTime.now(),
-        updatedAt: map['updatedAt'] != null
-            ? DateTime.parse(map['updatedAt'] as String)
-            : DateTime.now(),
-      );
-    } catch (e) {
-      print('Error creating Asset from map: $e');
-      rethrow;
-    }
+    return Asset(
+      id: map['id'] ?? '',
+      name: map['name'] ?? 'Unnamed Property',
+      address: map['address'] ?? 'No address provided',
+      type: map['type'] ?? 'Unknown',
+      status: map['status'] ?? 'Unknown',
+      unitNumber: map['unit_number'] ?? '',
+      imageUrl: map['image_url'],
+      rentAmount: (map['rent_amount'] ?? 0.0).toDouble(),
+      createdAt: map['created_at'] ?? DateTime.now().millisecondsSinceEpoch,
+      updatedAt: map['updated_at'] ?? DateTime.now().millisecondsSinceEpoch,
+      additionalData: Map<String, dynamic>.from(map)
+        ..remove('id')
+        ..remove('name')
+        ..remove('address')
+        ..remove('type')
+        ..remove('status')
+        ..remove('unit_number')
+        ..remove('image_url')
+        ..remove('rent_amount')
+        ..remove('created_at')
+        ..remove('updated_at'),
+    );
+  }
+
+  Asset copyWith({
+    String? id,
+    String? name,
+    String? address,
+    String? type,
+    String? status,
+    String? unitNumber,
+    String? imageUrl,
+    double? rentAmount,
+    int? createdAt,
+    int? updatedAt,
+    Map<String, dynamic>? additionalData,
+  }) {
+    return Asset(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      unitNumber: unitNumber ?? this.unitNumber,
+      imageUrl: imageUrl ?? this.imageUrl,
+      rentAmount: rentAmount ?? this.rentAmount,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      additionalData: additionalData ?? this.additionalData,
+    );
   }
 }

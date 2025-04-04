@@ -1,63 +1,126 @@
 import 'package:flutter/material.dart';
 import 'dart:developer' as developer;
+import 'dart:async';
+import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:provider/provider.dart';
+import 'package:firebase_performance/firebase_performance.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/assets_screen.dart';
 import 'screens/tenants_screen.dart';
 import 'screens/transactions_screen.dart';
-import 'providers/firebase_provider.dart';
+import 'providers/data_provider.dart';
+import 'test/test_asset_data.dart';
+import 'package:intl/intl.dart';
+import 'models/tenant.dart';
+import 'models/asset.dart';
 
-void main() async {
+Future<void> prefetchCriticalData() async {
   try {
-    developer.log('Starting app initialization...');
+    developer.log('Prefetching critical data...');
+    final ref = FirebaseDatabase.instance.ref();
+    await Future.wait([
+      ref.child('assets').keepSynced(true),
+      ref.child('tenants').keepSynced(true),
+      ref.child('transactions').keepSynced(true),
+    ]);
+    developer.log('Critical data prefetch completed');
+  } catch (e, stackTrace) {
+    developer.log('Error prefetching critical data: $e\n$stackTrace');
+  }
+}
 
-    // Ensure Flutter bindings are initialized
-    WidgetsFlutterBinding.ensureInitialized();
-    developer.log('Flutter bindings initialized');
+Future<void> initializeFirebase() async {
+  try {
+    developer.log('Starting Firebase initialization...', name: 'AppInit');
 
     // Initialize Firebase
+    await Firebase.initializeApp();
+    developer.log('Firebase core initialized successfully', name: 'AppInit');
+
+    // Set the database URL
+    FirebaseDatabase.instance.databaseURL =
+        'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
+    developer.log('Database URL set successfully', name: 'AppInit');
+
+    // Configure Firebase settings
     try {
-      developer.log('Starting Firebase initialization...');
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyA5Xxjg1PeuH2noYmgOWSi85Rr0nzkldfY',
-          appId: '1:184273620099:android:1f425a1374733bc058dfb6',
-          messagingSenderId: '184273620099',
-          projectId: 'assetto-7cad8',
-          storageBucket: 'assetto-7cad8.firebasestorage.app',
-        ),
-      );
-      developer.log('Firebase initialized successfully');
-
-      // Set the database URL after Firebase is initialized
-      FirebaseDatabase.instance.databaseURL =
-          'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
-      developer.log('Database URL set successfully');
-
-      // Test database connection
-      try {
-        developer.log('Testing database connection...');
-        final ref = FirebaseDatabase.instance.ref();
-        await ref.child('.info/connected').get();
-        developer.log('Database connection successful');
-      } catch (e, stackTrace) {
-        developer.log('Database connection failed: $e\n$stackTrace');
-        runApp(const ErrorApp(error: 'Failed to connect to database'));
-        return;
-      }
+      FirebaseDatabase.instance.setPersistenceEnabled(true);
+      FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);
+      developer.log('Firebase settings configured successfully',
+          name: 'AppInit');
     } catch (e, stackTrace) {
-      developer.log('Firebase initialization failed: $e\n$stackTrace');
-      runApp(ErrorApp(error: 'Failed to initialize Firebase: $e'));
+      developer.log('Failed to configure Firebase settings: $e\n$stackTrace',
+          name: 'AppInit');
+    }
+
+    // Test database connection with retry
+    bool connected = false;
+    int retryCount = 0;
+    while (!connected && retryCount < 3) {
+      try {
+        final ref = FirebaseDatabase.instance.ref();
+        await ref.child('test').get().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            throw TimeoutException('Database connection timed out');
+          },
+        );
+        connected = true;
+        developer.log('Database connection successful', name: 'AppInit');
+      } catch (e, stackTrace) {
+        retryCount++;
+        developer.log(
+            'Database connection attempt $retryCount failed: $e\n$stackTrace',
+            name: 'AppInit');
+        if (retryCount < 3) {
+          await Future.delayed(Duration(seconds: retryCount * 2));
+        }
+      }
+    }
+
+    if (!connected) {
+      developer.log('Failed to connect to database after $retryCount attempts',
+          name: 'AppInit');
       return;
     }
 
-    developer.log('Starting app...');
+    // Enable performance monitoring and analytics
+    try {
+      FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+      FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
+      developer.log('Performance monitoring and analytics enabled',
+          name: 'AppInit');
+    } catch (e, stackTrace) {
+      developer.log('Failed to enable monitoring: $e\n$stackTrace',
+          name: 'AppInit');
+    }
+
+    // Prefetch critical data
+    await prefetchCriticalData();
+    developer.log('Critical data prefetch completed', name: 'AppInit');
+  } catch (e, stackTrace) {
+    developer.log('Firebase initialization failed: $e\n$stackTrace',
+        name: 'AppInit');
+  }
+}
+
+void main() async {
+  try {
+    developer.log('Starting app initialization...', name: 'AppInit');
+    WidgetsFlutterBinding.ensureInitialized();
+    developer.log('Flutter bindings initialized', name: 'AppInit');
+
+    // Initialize Firebase
+    await initializeFirebase();
+
+    developer.log('Starting app...', name: 'AppInit');
     runApp(const MyApp());
   } catch (e, stackTrace) {
-    developer.log('Critical error during initialization: $e\n$stackTrace');
-    runApp(ErrorApp(error: 'Critical error: $e'));
+    developer.log('Critical error during initialization: $e\n$stackTrace',
+        name: 'AppInit');
+    runApp(ErrorApp(error: e.toString()));
   }
 }
 
@@ -98,7 +161,6 @@ class ErrorApp extends StatelessWidget {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () {
-                    // Restart the app
                     main();
                   },
                   child: const Text('Retry'),
@@ -117,13 +179,15 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    developer.log('Building MyApp...');
+    developer.log('Building MyApp...', name: 'AppInit');
     return ChangeNotifierProvider(
       create: (context) {
-        developer.log('Creating FirebaseProvider...');
-        final provider = FirebaseProvider();
+        developer.log('Creating DataProvider...', name: 'AppInit');
+        final provider = DataProvider();
+        // Initialize provider without waiting
         provider.initialize().catchError((e, stackTrace) {
-          developer.log('Error initializing FirebaseProvider: $e\n$stackTrace');
+          developer.log('Error initializing DataProvider: $e\n$stackTrace',
+              name: 'AppInit');
         });
         return provider;
       },
@@ -131,8 +195,73 @@ class MyApp extends StatelessWidget {
         title: 'Assetto - Property Management',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
+          colorScheme: ColorScheme.dark(
+            primary: Colors.teal,
+            secondary: Colors.white,
+            background: Colors.black,
+            surface: const Color(0xFF1A1A1A),
+            onPrimary: Colors.white,
+            onSecondary: Colors.black,
+            onBackground: Colors.white,
+            onSurface: Colors.white,
+          ),
+          scaffoldBackgroundColor: Colors.black,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            centerTitle: true,
+            titleTextStyle: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.black,
+            indicatorColor: Colors.teal,
+            labelTextStyle: MaterialStateProperty.all(
+              const TextStyle(fontSize: 12),
+            ),
+          ),
+          cardTheme: CardTheme(
+            color: const Color(0xFF1A1A1A),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+          textTheme: const TextTheme(
+            titleLarge: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+            titleMedium: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+            bodyLarge: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+            bodyMedium: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
         ),
         home: const MainScreen(),
       ),
@@ -170,27 +299,666 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  void _handleFloatingActionButton(BuildContext context) {
+    switch (_selectedIndex) {
+      case 1: // Assets
+        _showAddAssetDialog(context);
+        break;
+      case 2: // Tenants
+        _showAddTenantDialog(context);
+        break;
+      case 3: // Transactions
+        _showAddTransactionDialog(context);
+        break;
+      default:
+        // Do nothing for dashboard
+        break;
+    }
+  }
+
+  Future<void> _showAddAssetDialog(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final addressController = TextEditingController();
+    final unitNumberController = TextEditingController();
+    final rentAmountController = TextEditingController();
+    String selectedType = 'Apartment';
+    String selectedStatus = 'Vacant';
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add Asset'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Name is required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: addressController,
+                    decoration: const InputDecoration(labelText: 'Address'),
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Address is required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: unitNumberController,
+                    decoration: const InputDecoration(labelText: 'Unit Number'),
+                    validator: (value) => value?.isEmpty ?? true
+                        ? 'Unit number is required'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: rentAmountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Rent Amount',
+                      prefixText: '₹',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Rent amount is required';
+                      }
+                      if (double.tryParse(value) == null) {
+                        return 'Please enter a valid number';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    items: ['Apartment', 'House', 'Commercial', 'Other']
+                        .map((type) => DropdownMenuItem(
+                              value: type,
+                              child: Text(type),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        selectedType = value;
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedStatus,
+                    decoration: const InputDecoration(labelText: 'Status'),
+                    items: ['Vacant', 'Occupied', 'Under Maintenance']
+                        .map((status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(status),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        selectedStatus = value;
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() ?? false) {
+                  final assetData = {
+                    'name': nameController.text,
+                    'address': addressController.text,
+                    'unit_number': unitNumberController.text,
+                    'rent_amount': double.parse(rentAmountController.text),
+                    'type': selectedType,
+                    'status': selectedStatus,
+                  };
+                  context.read<DataProvider>().addAsset(assetData);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddTenantDialog(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final aadharNumberController = TextEditingController();
+    final advanceAmountController = TextEditingController();
+    final remarksController = TextEditingController();
+    String? selectedAssetId;
+    DateTime? leaseStart;
+    DateTime? leaseEnd;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add Tenant'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Basic Information
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Name *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Name is required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone *',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.phone,
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Phone is required' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Property Selection
+                  DropdownButtonFormField<String>(
+                    value: selectedAssetId,
+                    decoration: const InputDecoration(
+                      labelText: 'Property *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: context.read<DataProvider>().assets.map((asset) {
+                      return DropdownMenuItem(
+                        value: asset.id,
+                        child: Text('${asset.name} - ${asset.unitNumber}'),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedAssetId = value;
+                      });
+                    },
+                    validator: (value) =>
+                        value == null ? 'Please select a property' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Lease Dates
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final date = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now()
+                                  .add(const Duration(days: 3650)),
+                            );
+                            if (date != null) {
+                              setState(() => leaseStart = date);
+                            }
+                          },
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(
+                            leaseStart == null
+                                ? 'Start Date *'
+                                : DateFormat('dd/MM/yyyy').format(leaseStart!),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final date = await showDatePicker(
+                              context: context,
+                              initialDate: leaseStart
+                                      ?.add(const Duration(days: 365)) ??
+                                  DateTime.now().add(const Duration(days: 365)),
+                              firstDate: leaseStart ?? DateTime.now(),
+                              lastDate: DateTime.now()
+                                  .add(const Duration(days: 3650)),
+                            );
+                            if (date != null) {
+                              setState(() => leaseEnd = date);
+                            }
+                          },
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(
+                            leaseEnd == null
+                                ? 'End Date *'
+                                : DateFormat('dd/MM/yyyy').format(leaseEnd!),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Additional Information
+                  TextFormField(
+                    controller: aadharNumberController,
+                    decoration: const InputDecoration(
+                      labelText: 'Aadhar Number',
+                      border: OutlineInputBorder(),
+                      helperText: 'Optional',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: advanceAmountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Advance Amount',
+                      border: OutlineInputBorder(),
+                      prefixText: '₹',
+                      helperText: 'Optional',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value != null && value.isNotEmpty) {
+                        if (double.tryParse(value) == null) {
+                          return 'Please enter a valid number';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: remarksController,
+                    decoration: const InputDecoration(
+                      labelText: 'Remarks',
+                      border: OutlineInputBorder(),
+                      helperText: 'Optional',
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() ?? false) {
+                  if (leaseStart == null || leaseEnd == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please select lease dates'),
+                      ),
+                    );
+                    return;
+                  }
+                  if (selectedAssetId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please select a property'),
+                      ),
+                    );
+                    return;
+                  }
+                  final tenant = Tenant(
+                    id: '',
+                    name: nameController.text,
+                    remarks: remarksController.text.isEmpty
+                        ? null
+                        : remarksController.text,
+                    phone: phoneController.text,
+                    aadharNumber: aadharNumberController.text.isEmpty
+                        ? null
+                        : aadharNumberController.text,
+                    aadharImage: null,
+                    assetId: selectedAssetId!,
+                    leaseStart: leaseStart!.millisecondsSinceEpoch,
+                    leaseEnd: leaseEnd!.millisecondsSinceEpoch,
+                    advanceAmount: advanceAmountController.text.isEmpty
+                        ? null
+                        : double.parse(advanceAmountController.text),
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                    updatedAt: DateTime.now().millisecondsSinceEpoch,
+                  );
+                  context.read<DataProvider>().addTenant(tenant);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddTransactionDialog(BuildContext context) async {
+    final formKey = GlobalKey<FormState>();
+    final amountController = TextEditingController();
+    final descriptionController = TextEditingController();
+    String selectedType = 'income';
+    String selectedStatus = 'Pending';
+    String? selectedAssetId;
+    String? selectedTenantId;
+    DateTime? transactionDate;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add Transaction'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: amountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '₹',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Amount is required';
+                      }
+                      if (double.tryParse(value) == null) {
+                        return 'Please enter a valid number';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                    validator: (value) => value?.isEmpty ?? true
+                        ? 'Description is required'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedType,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ['income', 'expense'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(
+                            value,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          selectedType = newValue!;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please select a type';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedStatus,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: ['Pending', 'Completed', 'Failed']
+                          .map((status) => DropdownMenuItem(
+                                value: status,
+                                child: Text(
+                                  status,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          selectedStatus = value;
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedAssetId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Asset',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: context
+                          .read<DataProvider>()
+                          .assets
+                          .map((asset) => DropdownMenuItem(
+                                value: asset.id,
+                                child: Text(
+                                  '${asset.name} (${asset.unitNumber})',
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          selectedAssetId = value;
+                        }
+                      },
+                      validator: (value) =>
+                          value == null ? 'Please select an asset' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedTenantId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tenant',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: context
+                          .read<DataProvider>()
+                          .tenants
+                          .map((tenant) => DropdownMenuItem<String>(
+                                value: tenant.id,
+                                child: Text(
+                                  tenant.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          selectedTenantId = value;
+                        }
+                      },
+                      validator: (value) =>
+                          value == null ? 'Please select a tenant' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    title: Text(transactionDate == null
+                        ? 'Select Date'
+                        : 'Date: ${transactionDate.toString().split(' ')[0]}'),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate:
+                            DateTime.now().subtract(const Duration(days: 365)),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (date != null) {
+                        setState(() => transactionDate = date);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() ?? false) {
+                  if (transactionDate == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please select a date'),
+                      ),
+                    );
+                    return;
+                  }
+                  final transactionData = {
+                    'amount': double.parse(amountController.text),
+                    'description': descriptionController.text,
+                    'type': selectedType,
+                    'status': selectedStatus,
+                    'asset_id': selectedAssetId,
+                    'tenant_id': selectedTenantId,
+                    'date': transactionDate!.millisecondsSinceEpoch,
+                  };
+                  context.read<DataProvider>().addTransaction(transactionData);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     developer.log('Building MainScreen with selected index: $_selectedIndex');
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Assetto'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              // TODO: Implement search functionality
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () {
+              // TODO: Implement notifications
+            },
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'test_assets') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const TestAssetData()),
+                );
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'test_assets',
+                child: Text('Test Asset Data'),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: _screens[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard),
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          NavigationDestination(icon: Icon(Icons.home), label: 'Assets'),
-          NavigationDestination(icon: Icon(Icons.people), label: 'Tenants'),
           NavigationDestination(
-            icon: Icon(Icons.payments),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Assets',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Tenants',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.payments_outlined),
+            selectedIcon: Icon(Icons.payments),
             label: 'Transactions',
           ),
         ],
       ),
+      floatingActionButton: _selectedIndex == 0
+          ? null
+          : FloatingActionButton(
+              onPressed: () => _handleFloatingActionButton(context),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              child: const Icon(Icons.add),
+            ),
     );
   }
 }

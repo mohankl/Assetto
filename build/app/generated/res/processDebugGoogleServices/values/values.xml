@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="firebase_database_url" translatable="false">https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app</string>
     <string name="gcm_defaultSenderId" translatable="false">184273620099</string>
     <string name="google_api_key" translatable="false">AIzaSyA5Xxjg1PeuH2noYmgOWSi85Rr0nzkldfY</string>
     <string name="google_app_id" translatable="false">1:184273620099:android:1f425a1374733bc058dfb6</string>
