@@ -15,6 +15,7 @@ class DataProvider with ChangeNotifier {
   List<Transaction> _transactions = [];
   bool _isLoading = false;
   String? _error;
+  bool _isInitialized = false;
 
   // Getters
   List<Asset> get assets => _assets;
@@ -22,29 +23,35 @@ class DataProvider with ChangeNotifier {
   List<Transaction> get transactions => _transactions;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isInitialized => _isInitialized;
 
   // Initialize data
   Future<void> initialize() async {
+    if (_isInitialized) return;
+
     try {
       _isLoading = true;
+      _error = null;
       notifyListeners();
-      await loadAssets();
-      await loadTenants();
-      await loadTransactions();
-      _isLoading = false;
-      notifyListeners();
+
+      await Future.wait([
+        loadAssets(),
+        loadTenants(),
+        loadTransactions(),
+      ]);
+
+      _isInitialized = true;
+      _error = null;
     } catch (e) {
       _error = e.toString();
+      developer.log('Error initializing data: $_error');
+    } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
   Future<void> loadAssets() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
     try {
       final assetsData = await _firebase.getAssets();
       _assets = assetsData.map((data) => Asset.fromMap(data)).toList();
@@ -52,19 +59,42 @@ class DataProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       developer.log('Error loading assets: $_error');
+      rethrow;
     }
+  }
 
-    _isLoading = false;
-    notifyListeners();
+  Future<void> loadTenants() async {
+    try {
+      final tenantsData = await _firebase.getTenants();
+      _tenants = tenantsData.map((data) => Tenant.fromMap(data)).toList();
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+      developer.log('Error loading tenants: $_error');
+      rethrow;
+    }
+  }
+
+  Future<void> loadTransactions() async {
+    try {
+      final transactionsData = await _firebase.getTransactions();
+      _transactions =
+          transactionsData.map((data) => Transaction.fromMap(data)).toList();
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+      developer.log('Error loading transactions: $_error');
+      rethrow;
+    }
   }
 
   // Asset operations
   Future<void> addAsset(Map<String, dynamic> assetData) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
     try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
       final newAsset = Asset(
         id: _uuid.v4(),
         name: assetData['name'] ?? '',
@@ -84,10 +114,11 @@ class DataProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       developer.log('Error adding asset: $_error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   Future<void> updateAsset(String id, Map<String, dynamic> assetData) async {
@@ -144,24 +175,6 @@ class DataProvider with ChangeNotifier {
   }
 
   // Tenant operations
-  Future<void> loadTenants() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final tenantsData = await _firebase.getTenants();
-      _tenants = tenantsData.map((data) => Tenant.fromMap(data)).toList();
-      _error = null;
-    } catch (e) {
-      _error = e.toString();
-      developer.log('Error loading tenants: $_error');
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
   Future<void> addTenant(Tenant tenant) async {
     _isLoading = true;
     _error = null;
@@ -221,25 +234,6 @@ class DataProvider with ChangeNotifier {
   }
 
   // Transaction operations
-  Future<void> loadTransactions() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final transactionsData = await _firebase.getTransactions();
-      _transactions =
-          transactionsData.map((data) => Transaction.fromMap(data)).toList();
-      _error = null;
-    } catch (e) {
-      _error = e.toString();
-      developer.log('Error loading transactions: $_error');
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
   Future<void> addTransaction(Map<String, dynamic> transactionData) async {
     _isLoading = true;
     _error = null;

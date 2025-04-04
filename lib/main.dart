@@ -15,6 +15,51 @@ import 'test/test_asset_data.dart';
 import 'package:intl/intl.dart';
 import 'models/tenant.dart';
 import 'models/asset.dart';
+import 'providers/auth_provider.dart';
+import 'screens/login_screen.dart';
+
+Future<void> initializeFirebase() async {
+  try {
+    developer.log('Starting Firebase initialization...', name: 'AppInit');
+
+    // Initialize Firebase
+    await Firebase.initializeApp();
+    developer.log('Firebase core initialized successfully', name: 'AppInit');
+
+    // Set the database URL
+    FirebaseDatabase.instance.databaseURL =
+        'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
+    developer.log('Database URL set successfully', name: 'AppInit');
+
+    // Configure Firebase settings
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);
+    developer.log('Firebase settings configured successfully', name: 'AppInit');
+
+    // Enable performance monitoring and analytics
+    FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+    FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
+    developer.log('Performance monitoring and analytics enabled',
+        name: 'AppInit');
+
+    // Test database connection
+    final ref = FirebaseDatabase.instance.ref();
+    await ref.child('test').get().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        throw TimeoutException('Database connection timed out');
+      },
+    );
+    developer.log('Database connection successful', name: 'AppInit');
+
+    // Enable offline persistence
+    await prefetchCriticalData();
+  } catch (e, stackTrace) {
+    developer.log('Firebase initialization failed: $e\n$stackTrace',
+        name: 'AppInit');
+    rethrow;
+  }
+}
 
 Future<void> prefetchCriticalData() async {
   try {
@@ -31,96 +76,88 @@ Future<void> prefetchCriticalData() async {
   }
 }
 
-Future<void> initializeFirebase() async {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   try {
-    developer.log('Starting Firebase initialization...', name: 'AppInit');
-
-    // Initialize Firebase
-    await Firebase.initializeApp();
-    developer.log('Firebase core initialized successfully', name: 'AppInit');
-
-    // Set the database URL
-    FirebaseDatabase.instance.databaseURL =
-        'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
-    developer.log('Database URL set successfully', name: 'AppInit');
-
-    // Configure Firebase settings
-    try {
-      FirebaseDatabase.instance.setPersistenceEnabled(true);
-      FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);
-      developer.log('Firebase settings configured successfully',
-          name: 'AppInit');
-    } catch (e, stackTrace) {
-      developer.log('Failed to configure Firebase settings: $e\n$stackTrace',
-          name: 'AppInit');
-    }
-
-    // Test database connection with retry
-    bool connected = false;
-    int retryCount = 0;
-    while (!connected && retryCount < 3) {
-      try {
-        final ref = FirebaseDatabase.instance.ref();
-        await ref.child('test').get().timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            throw TimeoutException('Database connection timed out');
-          },
-        );
-        connected = true;
-        developer.log('Database connection successful', name: 'AppInit');
-      } catch (e, stackTrace) {
-        retryCount++;
-        developer.log(
-            'Database connection attempt $retryCount failed: $e\n$stackTrace',
-            name: 'AppInit');
-        if (retryCount < 3) {
-          await Future.delayed(Duration(seconds: retryCount * 2));
-        }
-      }
-    }
-
-    if (!connected) {
-      developer.log('Failed to connect to database after $retryCount attempts',
-          name: 'AppInit');
-      return;
-    }
-
-    // Enable performance monitoring and analytics
-    try {
-      FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
-      FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
-      developer.log('Performance monitoring and analytics enabled',
-          name: 'AppInit');
-    } catch (e, stackTrace) {
-      developer.log('Failed to enable monitoring: $e\n$stackTrace',
-          name: 'AppInit');
-    }
-
-    // Prefetch critical data
-    await prefetchCriticalData();
-    developer.log('Critical data prefetch completed', name: 'AppInit');
-  } catch (e, stackTrace) {
-    developer.log('Firebase initialization failed: $e\n$stackTrace',
-        name: 'AppInit');
+    await initializeFirebase();
+    runApp(const MyApp());
+  } catch (e) {
+    developer.log('Failed to initialize app: $e');
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                const SizedBox(height: 16),
+                Text('Failed to initialize app: $e'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await initializeFirebase();
+                      runApp(const MyApp());
+                    } catch (e) {
+                      developer.log('Retry failed: $e');
+                    }
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-void main() async {
-  try {
-    developer.log('Starting app initialization...', name: 'AppInit');
-    WidgetsFlutterBinding.ensureInitialized();
-    developer.log('Flutter bindings initialized', name: 'AppInit');
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
 
-    // Initialize Firebase
-    await initializeFirebase();
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => DataProvider()),
+      ],
+      child: MaterialApp(
+        title: 'Assetto',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: const AuthWrapper(),
+      ),
+    );
+  }
+}
 
-    developer.log('Starting app...', name: 'AppInit');
-    runApp(const MyApp());
-  } catch (e, stackTrace) {
-    developer.log('Critical error during initialization: $e\n$stackTrace',
-        name: 'AppInit');
-    runApp(ErrorApp(error: e.toString()));
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        if (authProvider.isLoading) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        return authProvider.isAuthenticated
+            ? const MainScreen()
+            : const LoginScreen();
+      },
+    );
   }
 }
 
@@ -169,101 +206,6 @@ class ErrorApp extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    developer.log('Building MyApp...', name: 'AppInit');
-    return ChangeNotifierProvider(
-      create: (context) {
-        developer.log('Creating DataProvider...', name: 'AppInit');
-        final provider = DataProvider();
-        // Initialize provider without waiting
-        provider.initialize().catchError((e, stackTrace) {
-          developer.log('Error initializing DataProvider: $e\n$stackTrace',
-              name: 'AppInit');
-        });
-        return provider;
-      },
-      child: MaterialApp(
-        title: 'Assetto - Property Management',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.dark(
-            primary: Colors.teal,
-            secondary: Colors.white,
-            background: Colors.black,
-            surface: const Color(0xFF1A1A1A),
-            onPrimary: Colors.white,
-            onSecondary: Colors.black,
-            onBackground: Colors.white,
-            onSurface: Colors.white,
-          ),
-          scaffoldBackgroundColor: Colors.black,
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.black,
-            elevation: 0,
-            centerTitle: true,
-            titleTextStyle: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.black,
-            indicatorColor: Colors.teal,
-            labelTextStyle: MaterialStateProperty.all(
-              const TextStyle(fontSize: 12),
-            ),
-          ),
-          cardTheme: CardTheme(
-            color: const Color(0xFF1A1A1A),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-          ),
-          textTheme: const TextTheme(
-            titleLarge: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-            titleMedium: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-            bodyLarge: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
-            bodyMedium: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-            ),
-          ),
-        ),
-        home: const MainScreen(),
       ),
     );
   }

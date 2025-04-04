@@ -16,47 +16,42 @@ class TenantsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final dataProvider = context.watch<DataProvider>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tenants'),
-      ),
-      body: dataProvider.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : dataProvider.error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          color: Colors.red, size: 48),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error: ${dataProvider.error}',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => dataProvider.initialize(),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : dataProvider.tenants.isEmpty
-                  ? const Center(
-                      child: Text('No tenants found'),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () => dataProvider.initialize(),
-                      child: ListView.builder(
-                        itemCount: dataProvider.tenants.length,
-                        itemBuilder: (context, index) {
-                          final tenant = dataProvider.tenants[index];
-                          return _buildTenantCard(context, tenant);
-                        },
-                      ),
+    return dataProvider.isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : dataProvider.error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.red, size: 48),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error: ${dataProvider.error}',
+                      textAlign: TextAlign.center,
                     ),
-    );
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => dataProvider.initialize(),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : dataProvider.tenants.isEmpty
+                ? const Center(
+                    child: Text('No tenants found'),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => dataProvider.initialize(),
+                    child: ListView.builder(
+                      itemCount: dataProvider.tenants.length,
+                      itemBuilder: (context, index) {
+                        final tenant = dataProvider.tenants[index];
+                        return _buildTenantCard(context, tenant);
+                      },
+                    ),
+                  );
   }
 
   Widget _buildTenantCard(BuildContext context, Tenant tenant) {

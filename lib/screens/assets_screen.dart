@@ -10,43 +10,38 @@ class AssetsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<DataProvider>(
       builder: (context, dataProvider, child) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Assets'),
-          ),
-          body: dataProvider.isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : dataProvider.error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.error_outline,
-                              color: Colors.red, size: 48),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Error: ${dataProvider.error}',
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => dataProvider.initialize(),
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () => dataProvider.loadAssets(),
-                      child: ListView.builder(
-                        itemCount: dataProvider.assets.length,
-                        itemBuilder: (context, index) {
-                          final asset = dataProvider.assets[index];
-                          return AssetCard(asset: asset);
-                        },
-                      ),
+        return dataProvider.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : dataProvider.error != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: Colors.red, size: 48),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error: ${dataProvider.error}',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => dataProvider.initialize(),
+                          child: const Text('Retry'),
+                        ),
+                      ],
                     ),
-        );
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => dataProvider.loadAssets(),
+                    child: ListView.builder(
+                      itemCount: dataProvider.assets.length,
+                      itemBuilder: (context, index) {
+                        final asset = dataProvider.assets[index];
+                        return AssetCard(asset: asset);
+                      },
+                    ),
+                  );
       },
     );
   }

@@ -13,7 +13,20 @@
           "package_name": "com.alphastate.assetto"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "184273620099-27mvej1t87ds80rko0oo90mn4ua7pucu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.alphastate.assetto",
+            "certificate_hash": "6726687267266826672668266726682667266826"
+          }
+        },
+        {
+          "client_id": "184273620099-l4h235ihfir7vhis48afpctsg9gidaii.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA5Xxjg1PeuH2noYmgOWSi85Rr0nzkldfY"
@@ -21,7 +34,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "184273620099-l4h235ihfir7vhis48afpctsg9gidaii.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
