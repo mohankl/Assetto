@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/data_provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:developer' as developer;
+import '../models/tenant.dart';
+import '../models/asset.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -80,8 +82,32 @@ class _DashboardScreenState extends State<DashboardScreen>
           DateTime.fromMillisecondsSinceEpoch(t.date).month == month.month);
 
       // Tenant is unpaid if they have no completed rent transactions this month
-      return rentTransactions.isEmpty;
+      // and they are currently assigned to an asset
+      return rentTransactions.isEmpty && tenant.assetId.isNotEmpty;
     }).toList();
+
+    // Group unpaid tenants by asset ID to avoid duplicates
+    final Map<String, List<Tenant>> unpaidTenantsByAsset = {};
+    for (final tenant in unpaidTenants) {
+      final asset = assets.firstWhere(
+        (asset) => asset.id == tenant.assetId,
+        orElse: () => Asset(
+          id: '',
+          name: 'Unknown Property',
+          address: 'No address provided',
+          type: 'Unknown',
+          status: 'Unknown',
+          unitNumber: '',
+          rentAmount: 0.0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      if (!unpaidTenantsByAsset.containsKey(asset.address)) {
+        unpaidTenantsByAsset[asset.address] = [];
+      }
+      unpaidTenantsByAsset[asset.address]!.add(tenant);
+    }
 
     // Calculate income and expenses for the specific month
     final monthlyTransactions = transactions.where((t) {
@@ -100,16 +126,24 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final netIncome = totalIncome - totalExpenses;
 
+    // Calculate expected cash flow (sum of all property rent amounts)
+    final expectedCashFlow =
+        assets.fold(0.0, (sum, asset) => sum + asset.rentAmount);
+
+    final pendingIncome = expectedCashFlow - totalIncome;
+
     return {
       'occupiedUnits': occupiedUnits,
       'totalUnits': totalUnits,
       'occupancyRate': occupancyRate,
       'upcomingLeaseEnds': upcomingLeaseEnds,
       'unpaidTenants': unpaidTenants,
+      'unpaidTenantsByAsset': unpaidTenantsByAsset,
       'totalIncome': totalIncome,
       'totalExpenses': totalExpenses,
       'netIncome': netIncome,
       'monthlyTransactions': monthlyTransactions,
+      'expectedCashFlow': expectedCashFlow,
     };
   }
 
@@ -127,10 +161,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     final totalUnits = stats['totalUnits'] as int;
     final occupancyRate = stats['occupancyRate'] as String;
     final upcomingLeaseEnds = stats['upcomingLeaseEnds'] as int;
+    final expectedCashFlow = stats['expectedCashFlow'] as double;
+    final pendingIncome = expectedCashFlow - totalIncome;
 
     developer.log(
         'Dashboard Statistics for ${DateFormat('MMMM yyyy').format(month)}:');
+    developer.log('Expected Income: $expectedCashFlow');
     developer.log('Total Income: $totalIncome');
+    developer.log('Pending Income: $pendingIncome');
     developer.log('Total Expenses: $totalExpenses');
     developer.log('Net Income: $netIncome');
     developer.log('Total Transactions: ${stats['monthlyTransactions'].length}');
@@ -144,34 +182,25 @@ class _DashboardScreenState extends State<DashboardScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSummaryCard(
-            'Properties Overview',
-            [
-              _buildStatRow(
-                'Total Properties',
-                totalUnits.toString(),
-                Icons.home,
-              ),
-              _buildStatRow(
-                'Occupancy Rate',
-                '$occupancyRate%',
-                Icons.percent,
-              ),
-              _buildStatRow(
-                'Occupied Units',
-                occupiedUnits.toString(),
-                Icons.people,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildSummaryCard(
             'Financial Summary',
             [
+              _buildStatRow(
+                'Expected Income',
+                currencyFormat.format(expectedCashFlow),
+                Icons.account_balance_wallet,
+                color: Colors.teal,
+              ),
               _buildStatRow(
                 'Total Income',
                 currencyFormat.format(totalIncome),
                 Icons.arrow_upward,
                 color: Colors.green,
+              ),
+              _buildStatRow(
+                'Pending Income',
+                currencyFormat.format(pendingIncome),
+                Icons.pending_actions,
+                color: Colors.orange,
               ),
               _buildStatRow(
                 'Total Expenses',
@@ -201,35 +230,44 @@ class _DashboardScreenState extends State<DashboardScreen>
                 const SizedBox(height: 8),
                 const Divider(),
                 const SizedBox(height: 8),
-                // Group unpaid tenants by property address
-                ...assets
-                    .where((asset) => unpaidTenants
-                        .any((tenant) => tenant.assetId == asset.id))
-                    .map((asset) {
-                  final assetUnpaidTenants = unpaidTenants
-                      .where((tenant) => tenant.assetId == asset.id)
-                      .toList();
+                // Group unpaid tenants by property
+                ...stats['unpaidTenantsByAsset'].keys.map((address) {
+                  final assetUnpaidTenants =
+                      stats['unpaidTenantsByAsset'][address] as List<Tenant>;
+                  final asset = assets.firstWhere(
+                    (a) => a.address == address,
+                    orElse: () => Asset(
+                      id: '',
+                      name: 'Unknown Property',
+                      address: address,
+                      type: 'Unknown',
+                      status: 'Unknown',
+                      unitNumber: '',
+                      rentAmount: 0.0,
+                      createdAt: DateTime.now().millisecondsSinceEpoch,
+                      updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  );
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Location header with count
+                      // Property header with unpaid count
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            vertical: 8.0, horizontal: 12.0),
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.teal),
+                          color: Colors.teal.withAlpha(25),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.location_on,
-                                size: 16, color: Colors.teal),
+                            const Icon(Icons.home,
+                                size: 20, color: Colors.teal),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                asset.address,
+                                address,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -241,9 +279,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(color: Colors.red),
+                                color: Colors.red.withAlpha(25),
                                 borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.red.withAlpha(77),
+                                ),
                               ),
                               child: Text(
                                 '${assetUnpaidTenants.length} unpaid',
@@ -257,15 +297,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      // List of unpaid tenants for this location
+                      const SizedBox(height: 8),
+                      // List of unpaid tenants for this property
                       Container(
                         margin: const EdgeInsets.only(left: 16.0),
                         decoration: BoxDecoration(
                           border: Border(
                             left: BorderSide(
-                              color: Colors.teal.withValues(
-                                  red: 0, green: 128, blue: 128, alpha: 100),
+                              color: Colors.teal.withAlpha(100),
                               width: 1.0,
                             ),
                           ),
@@ -274,19 +313,32 @@ class _DashboardScreenState extends State<DashboardScreen>
                           children: assetUnpaidTenants.map((tenant) {
                             return Padding(
                               padding:
-                                  const EdgeInsets.only(left: 8.0, bottom: 4.0),
+                                  const EdgeInsets.only(left: 8.0, bottom: 8.0),
                               child: Row(
                                 children: [
                                   const Icon(Icons.person,
                                       size: 16, color: Colors.red),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(
-                                      '${tenant.name} (Unit ${asset.unitNumber})',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          tenant.name,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Unit ${asset.unitNumber}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -309,6 +361,27 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          _buildSummaryCard(
+            'Properties Overview',
+            [
+              _buildStatRow(
+                'Total Properties',
+                totalUnits.toString(),
+                Icons.home,
+              ),
+              _buildStatRow(
+                'Occupancy Rate',
+                '$occupancyRate%',
+                Icons.percent,
+              ),
+              _buildStatRow(
+                'Occupied Units',
+                occupiedUnits.toString(),
+                Icons.people,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -323,7 +396,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: Colors.teal,
-        title: const Text('Dashboard'),
+        title: const Text('Asset Overview by Month'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

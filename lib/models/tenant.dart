@@ -6,6 +6,7 @@ class Tenant {
   final String? aadharNumber;
   final String? aadharImage;
   final String assetId;
+  final String? assetName;
   final int? leaseStart;
   final int? leaseEnd;
   final double? advanceAmount;
@@ -21,6 +22,7 @@ class Tenant {
     this.aadharNumber,
     this.aadharImage,
     required this.assetId,
+    this.assetName,
     this.leaseStart,
     this.leaseEnd,
     this.advanceAmount,
@@ -38,6 +40,7 @@ class Tenant {
       aadharNumber: null,
       aadharImage: null,
       assetId: '',
+      assetName: null,
       leaseStart: null,
       leaseEnd: null,
       advanceAmount: null,
@@ -56,6 +59,7 @@ class Tenant {
       'aadhar_number': aadharNumber,
       'aadhar_image': aadharImage,
       'asset_id': assetId,
+      'asset_name': assetName,
       'lease_start': leaseStart,
       'lease_end': leaseEnd,
       'advance_amount': advanceAmount,
@@ -74,6 +78,7 @@ class Tenant {
       aadharNumber: map['aadhar_number'],
       aadharImage: map['aadhar_image'],
       assetId: map['asset_id'] ?? '',
+      assetName: map['asset_name'],
       leaseStart: map['lease_start'],
       leaseEnd: map['lease_end'],
       advanceAmount: map['advance_amount'] != null
@@ -89,6 +94,7 @@ class Tenant {
         ..remove('aadhar_number')
         ..remove('aadhar_image')
         ..remove('asset_id')
+        ..remove('asset_name')
         ..remove('lease_start')
         ..remove('lease_end')
         ..remove('advance_amount')
@@ -105,6 +111,7 @@ class Tenant {
     String? aadharNumber,
     String? aadharImage,
     String? assetId,
+    String? assetName,
     int? leaseStart,
     int? leaseEnd,
     double? advanceAmount,
@@ -120,6 +127,7 @@ class Tenant {
       aadharNumber: aadharNumber ?? this.aadharNumber,
       aadharImage: aadharImage ?? this.aadharImage,
       assetId: assetId ?? this.assetId,
+      assetName: assetName ?? this.assetName,
       leaseStart: leaseStart ?? this.leaseStart,
       leaseEnd: leaseEnd ?? this.leaseEnd,
       advanceAmount: advanceAmount ?? this.advanceAmount,

@@ -66,7 +66,25 @@ class DataProvider with ChangeNotifier {
   Future<void> loadTenants() async {
     try {
       final tenantsData = await _firebase.getTenants();
-      _tenants = tenantsData.map((data) => Tenant.fromMap(data)).toList();
+      _tenants = tenantsData.map((data) {
+        final tenant = Tenant.fromMap(data);
+        // Find the associated asset and set its name
+        final asset = _assets.firstWhere(
+          (asset) => asset.id == tenant.assetId,
+          orElse: () => Asset(
+            id: '',
+            name: 'Unknown Property',
+            address: 'No address provided',
+            type: 'Unknown',
+            status: 'Unknown',
+            unitNumber: '',
+            rentAmount: 0.0,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        return tenant.copyWith(assetName: asset.name);
+      }).toList();
       _error = null;
     } catch (e) {
       _error = e.toString();
@@ -245,7 +263,7 @@ class DataProvider with ChangeNotifier {
         assetId: transactionData['asset_id'] ?? '',
         tenantId: transactionData['tenant_id'],
         amount: (transactionData['amount'] ?? 0.0).toDouble(),
-        type: transactionData['type']?.toLowerCase() ?? 'income',
+        type: transactionData['type']?.toLowerCase() ?? 'advance',
         status: transactionData['status']?.toLowerCase() ?? 'pending',
         description: transactionData['description'] ?? '',
         date: transactionData['date'] ?? DateTime.now().millisecondsSinceEpoch,
@@ -263,7 +281,7 @@ class DataProvider with ChangeNotifier {
           .log('Transaction added successfully: ${newTransaction.toMap()}');
       developer.log('Total transactions: ${_transactions.length}');
       developer.log(
-          'Total income: ${_transactions.where((t) => t.type.toLowerCase() == 'income').fold(0.0, (sum, t) => sum + t.amount)}');
+          'Total advance: ${_transactions.where((t) => t.type.toLowerCase() == 'advance').fold(0.0, (sum, t) => sum + t.amount)}');
 
       // Notify listeners after successful addition
       notifyListeners();
@@ -303,14 +321,21 @@ class DataProvider with ChangeNotifier {
         throw Exception('Transaction not found');
       }
 
+      // Ensure type is lowercase for consistency
+      final transactionType = transactionData['type'].toString().toLowerCase();
+
+      // Validate transaction type
+      if (!['advance', 'expense', 'rent'].contains(transactionType)) {
+        throw Exception('Invalid transaction type: $transactionType');
+      }
+
       final updatedTransaction = Transaction(
         id: id,
         assetId: transactionData['asset_id'] ?? _transactions[index].assetId,
         tenantId: transactionData['tenant_id'] ?? _transactions[index].tenantId,
         amount: (transactionData['amount'] ?? _transactions[index].amount)
             .toDouble(),
-        type:
-            transactionData['type']?.toLowerCase() ?? _transactions[index].type,
+        type: transactionType,
         status: transactionData['status']?.toLowerCase() ??
             _transactions[index].status,
         description:

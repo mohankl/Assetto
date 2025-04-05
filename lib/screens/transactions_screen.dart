@@ -45,14 +45,68 @@ class TransactionsScreen extends StatelessWidget {
                 )
               : RefreshIndicator(
                   onRefresh: () => dataProvider.initialize(),
-                  child: ListView.builder(
-                    itemCount: dataProvider.transactions.length,
-                    itemBuilder: (context, index) {
-                      final transaction = dataProvider.transactions[index];
-                      return _buildTransactionCard(context, transaction);
-                    },
-                  ),
+                  child: _buildGroupedTransactions(context, dataProvider),
                 ),
+    );
+  }
+
+  Widget _buildGroupedTransactions(
+      BuildContext context, DataProvider dataProvider) {
+    // Group transactions by property
+    final Map<String, List<Transaction>> groupedTransactions = {};
+
+    for (final transaction in dataProvider.transactions) {
+      final asset = dataProvider.assets.firstWhere(
+        (asset) => asset.id == transaction.assetId,
+        orElse: () => Asset(
+          id: '',
+          name: 'Unknown Property',
+          address: 'No address provided',
+          type: 'Unknown',
+          status: 'Unknown',
+          unitNumber: '',
+          rentAmount: 0.0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      if (!groupedTransactions.containsKey(asset.name)) {
+        groupedTransactions[asset.name] = [];
+      }
+      groupedTransactions[asset.name]!.add(transaction);
+    }
+
+    // Sort properties alphabetically
+    final sortedProperties = groupedTransactions.keys.toList()..sort();
+
+    return ListView.builder(
+      itemCount: sortedProperties.length,
+      itemBuilder: (context, index) {
+        final propertyName = sortedProperties[index];
+        final transactions = groupedTransactions[propertyName]!;
+
+        // Sort transactions by date (newest first)
+        transactions.sort((a, b) => b.date.compareTo(a.date));
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                propertyName,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ...transactions.map(
+                (transaction) => _buildTransactionCard(context, transaction)),
+          ],
+        );
+      },
     );
   }
 
@@ -309,7 +363,7 @@ class TransactionsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: selectedType,
+                    value: selectedType.toLowerCase(),
                     decoration: const InputDecoration(
                       labelText: 'Type',
                       border: OutlineInputBorder(),
@@ -330,7 +384,7 @@ class TransactionsScreen extends StatelessWidget {
                     ],
                     onChanged: (value) {
                       if (value != null) {
-                        selectedType = value;
+                        selectedType = value.toLowerCase();
                       }
                     },
                   ),
@@ -561,7 +615,7 @@ class TransactionsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: selectedType,
+                      value: selectedType.toLowerCase(),
                       decoration: const InputDecoration(
                         labelText: 'Type',
                         border: OutlineInputBorder(),
@@ -583,7 +637,7 @@ class TransactionsScreen extends StatelessWidget {
                       onChanged: (value) {
                         if (value != null) {
                           setState(() {
-                            selectedType = value;
+                            selectedType = value.toLowerCase();
                           });
                         }
                       },

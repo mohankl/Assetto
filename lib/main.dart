@@ -17,21 +17,22 @@ import 'models/tenant.dart';
 import 'models/asset.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 Future<void> initializeFirebase() async {
   try {
     developer.log('Starting Firebase initialization...', name: 'AppInit');
 
-    // Initialize Firebase
+    // Initialize Firebase for Android
     await Firebase.initializeApp();
-    developer.log('Firebase core initialized successfully', name: 'AppInit');
+    developer.log('Firebase initialization completed', name: 'AppInit');
 
     // Set the database URL
     FirebaseDatabase.instance.databaseURL =
         'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
     developer.log('Database URL set successfully', name: 'AppInit');
 
-    // Configure Firebase settings
+    // Configure Firebase settings for Android
     FirebaseDatabase.instance.setPersistenceEnabled(true);
     FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);
     developer.log('Firebase settings configured successfully', name: 'AppInit');
@@ -44,15 +45,20 @@ Future<void> initializeFirebase() async {
 
     // Test database connection with timeout
     final ref = FirebaseDatabase.instance.ref();
-    await ref.child('test').get().timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        throw TimeoutException('Database connection timed out');
-      },
-    );
-    developer.log('Database connection successful', name: 'AppInit');
+    try {
+      await ref.child('test').get().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException('Database connection timed out');
+        },
+      );
+      developer.log('Database connection successful', name: 'AppInit');
+    } catch (e) {
+      developer.log('Database connection test failed: $e', name: 'AppInit');
+      // Don't rethrow here as this is just a test
+    }
 
-    // Enable offline persistence
+    // Enable offline persistence and prefetch critical data
     await prefetchCriticalData();
   } catch (e, stackTrace) {
     developer.log('Firebase initialization failed: $e\n$stackTrace',
@@ -165,9 +171,15 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        return authProvider.isAuthenticated
-            ? const MainScreen()
-            : const LoginScreen();
+        if (authProvider.isAuthenticated) {
+          // Initialize data provider when authenticated
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            context.read<DataProvider>().initialize();
+          });
+          return const MainScreen();
+        }
+
+        return const LoginScreen();
       },
     );
   }
@@ -617,7 +629,7 @@ class _MainScreenState extends State<MainScreen> {
     final formKey = GlobalKey<FormState>();
     final amountController = TextEditingController();
     final descriptionController = TextEditingController();
-    String selectedType = 'income';
+    String selectedType = 'advance';
     String selectedStatus = 'Pending';
     String? selectedAssetId;
     String? selectedTenantId;
@@ -669,7 +681,7 @@ class _MainScreenState extends State<MainScreen> {
                         labelText: 'Type',
                         border: OutlineInputBorder(),
                       ),
-                      items: ['income', 'expense'].map((String value) {
+                      items: ['advance', 'expense', 'rent'].map((String value) {
                         return DropdownMenuItem<String>(
                           value: value,
                           child: Text(
