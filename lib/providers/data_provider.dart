@@ -283,41 +283,58 @@ class DataProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Validate required fields
+      if (transactionData['amount'] == null) {
+        throw Exception('Amount is required');
+      }
+      if (transactionData['asset_id'] == null) {
+        throw Exception('Asset ID is required');
+      }
+      if (transactionData['type'] == null) {
+        throw Exception('Transaction type is required');
+      }
+      if (transactionData['status'] == null) {
+        throw Exception('Transaction status is required');
+      }
+
       final index =
           _transactions.indexWhere((transaction) => transaction.id == id);
-      if (index != -1) {
-        final updatedTransaction = Transaction(
-          id: id,
-          assetId: transactionData['asset_id'] ?? _transactions[index].assetId,
-          tenantId:
-              transactionData['tenant_id'] ?? _transactions[index].tenantId,
-          amount: (transactionData['amount'] ?? _transactions[index].amount)
-              .toDouble(),
-          type: transactionData['type']?.toLowerCase() ??
-              _transactions[index].type,
-          status: transactionData['status']?.toLowerCase() ??
-              _transactions[index].status,
-          description: transactionData['description'] ??
-              _transactions[index].description,
-          date: transactionData['date'] ?? _transactions[index].date,
-          createdAt: _transactions[index].createdAt,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        );
-
-        await _firebase.updateTransaction(id, updatedTransaction.toMap());
-        _transactions[index] = updatedTransaction;
-        _error = null;
-
-        // Notify listeners after successful update
-        notifyListeners();
+      if (index == -1) {
+        throw Exception('Transaction not found');
       }
+
+      final updatedTransaction = Transaction(
+        id: id,
+        assetId: transactionData['asset_id'] ?? _transactions[index].assetId,
+        tenantId: transactionData['tenant_id'] ?? _transactions[index].tenantId,
+        amount: (transactionData['amount'] ?? _transactions[index].amount)
+            .toDouble(),
+        type:
+            transactionData['type']?.toLowerCase() ?? _transactions[index].type,
+        status: transactionData['status']?.toLowerCase() ??
+            _transactions[index].status,
+        description:
+            transactionData['description'] ?? _transactions[index].description,
+        date: (transactionData['date'] ?? _transactions[index].date).toInt(),
+        createdAt: _transactions[index].createdAt,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      await _firebase.updateTransaction(id, updatedTransaction.toMap());
+      _transactions[index] = updatedTransaction;
+      _error = null;
+
+      developer.log(
+          'Transaction updated successfully: ${updatedTransaction.toMap()}');
+      notifyListeners();
     } catch (e) {
       _error = e.toString();
       developer.log('Error updating transaction: $_error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   Future<void> deleteTransaction(String id) async {
@@ -326,15 +343,26 @@ class DataProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Validate transaction exists
+      final index =
+          _transactions.indexWhere((transaction) => transaction.id == id);
+      if (index == -1) {
+        throw Exception('Transaction not found');
+      }
+
       await _firebase.deleteTransaction(id);
       _transactions.removeWhere((transaction) => transaction.id == id);
       _error = null;
+
+      developer.log('Transaction deleted successfully: $id');
+      notifyListeners();
     } catch (e) {
       _error = e.toString();
       developer.log('Error deleting transaction: $_error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 }

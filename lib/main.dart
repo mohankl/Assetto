@@ -42,7 +42,7 @@ Future<void> initializeFirebase() async {
     developer.log('Performance monitoring and analytics enabled',
         name: 'AppInit');
 
-    // Test database connection
+    // Test database connection with timeout
     final ref = FirebaseDatabase.instance.ref();
     await ref.child('test').get().timeout(
       const Duration(seconds: 5),
@@ -73,6 +73,7 @@ Future<void> prefetchCriticalData() async {
     developer.log('Critical data prefetch completed');
   } catch (e, stackTrace) {
     developer.log('Error prefetching critical data: $e\n$stackTrace');
+    // Don't rethrow here as this is not critical for app startup
   }
 }
 
@@ -84,34 +85,7 @@ void main() async {
     runApp(const MyApp());
   } catch (e) {
     developer.log('Failed to initialize app: $e');
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                const SizedBox(height: 16),
-                Text('Failed to initialize app: $e'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () async {
-                    try {
-                      await initializeFirebase();
-                      runApp(const MyApp());
-                    } catch (e) {
-                      developer.log('Retry failed: $e');
-                    }
-                  },
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    runApp(ErrorApp(error: e.toString()));
   }
 }
 
@@ -129,8 +103,46 @@ class MyApp extends StatelessWidget {
         title: 'Assetto',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.teal,
+            primary: Colors.teal,
+            secondary: Colors.tealAccent,
+            background: Colors.teal.shade50,
+          ),
+          useMaterial3: true,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          floatingActionButtonTheme: FloatingActionButtonThemeData(
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+          ),
+          bottomNavigationBarTheme: BottomNavigationBarThemeData(
+            backgroundColor: Colors.teal,
+            selectedItemColor: Colors.white,
+            unselectedItemColor: Colors.white70,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          cardTheme: CardTheme(
+            color: Colors.white,
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          scaffoldBackgroundColor: Colors.teal.shade50,
         ),
         home: const AuthWrapper(),
       ),

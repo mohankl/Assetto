@@ -17,6 +17,10 @@ class TransactionsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Transactions'),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddTransactionDialog(context),
+        child: const Icon(Icons.add),
+      ),
       body: dataProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : dataProvider.error != null
@@ -97,7 +101,7 @@ class TransactionsScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: _getStatusColor(transaction.status).withOpacity(0.1),
+                color: _getStatusColor(transaction.status).withAlpha(25),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
@@ -197,7 +201,7 @@ class TransactionsScreen extends StatelessWidget {
     final amountController = TextEditingController();
     final descriptionController = TextEditingController();
     DateTime selectedDate = DateTime.now();
-    String selectedType = 'rent';
+    String selectedType = 'advance';
     String selectedStatus = 'pending';
 
     final dataProvider = context.read<DataProvider>();
@@ -205,9 +209,24 @@ class TransactionsScreen extends StatelessWidget {
     String selectedAssetId = assets.first.id;
     String? selectedTenantId;
 
+    // Get tenants for the selected asset
     final tenants = dataProvider.tenants
         .where((tenant) => tenant.assetId == selectedAssetId)
         .toList();
+
+    // Create tenant dropdown items
+    final List<DropdownMenuItem<String?>> tenantItems = [
+      const DropdownMenuItem(
+        value: null,
+        child: Text('No tenant'),
+      ),
+      ...tenants.map(
+        (tenant) => DropdownMenuItem<String?>(
+          value: tenant.id,
+          child: Text(tenant.name),
+        ),
+      ),
+    ];
 
     await showDialog(
       context: context,
@@ -244,14 +263,35 @@ class TransactionsScreen extends StatelessWidget {
                     items: assets
                         .map((asset) => DropdownMenuItem(
                               value: asset.id,
-                              child: Text(asset.name),
+                              child: Text(
+                                  '${asset.name} - Unit ${asset.unitNumber}'),
                             ))
                         .toList(),
                     onChanged: (value) {
                       if (value != null) {
                         setState(() {
                           selectedAssetId = value;
+                          // Reset tenant selection when asset changes
                           selectedTenantId = null;
+                          // Update tenant items list
+                          final updatedTenants = dataProvider.tenants
+                              .where((tenant) => tenant.assetId == value)
+                              .toList();
+                          tenantItems.clear();
+                          tenantItems.add(
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('No tenant'),
+                            ),
+                          );
+                          tenantItems.addAll(
+                            updatedTenants.map(
+                              (tenant) => DropdownMenuItem<String?>(
+                                value: tenant.id,
+                                child: Text(tenant.name),
+                              ),
+                            ),
+                          );
                         });
                       }
                     },
@@ -259,21 +299,10 @@ class TransactionsScreen extends StatelessWidget {
                         value == null ? 'Property is required' : null,
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
+                  DropdownButtonFormField<String?>(
                     value: selectedTenantId,
                     decoration: const InputDecoration(labelText: 'Tenant'),
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('No tenant'),
-                      ),
-                      ...tenants.map(
-                        (tenant) => DropdownMenuItem(
-                          value: tenant.id,
-                          child: Text(tenant.name),
-                        ),
-                      ),
-                    ],
+                    items: tenantItems,
                     onChanged: (value) {
                       selectedTenantId = value;
                     },
@@ -281,13 +310,24 @@ class TransactionsScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedType,
-                    decoration: const InputDecoration(labelText: 'Type'),
-                    items: ['rent', 'deposit', 'maintenance', 'other']
-                        .map((type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ))
-                        .toList(),
+                    decoration: const InputDecoration(
+                      labelText: 'Type',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'advance',
+                        child: Text('Advance'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'expense',
+                        child: Text('Expense'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'rent',
+                        child: Text('Rent'),
+                      ),
+                    ],
                     onChanged: (value) {
                       if (value != null) {
                         selectedType = value;
@@ -388,199 +428,332 @@ class TransactionsScreen extends StatelessWidget {
     String selectedAssetId = transaction.assetId;
     String? selectedTenantId = transaction.tenantId;
 
+    // Ensure we have at least one asset
+    if (assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No assets available. Please add an asset first.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Get tenants for the selected asset
     final tenants = dataProvider.tenants
         .where((tenant) => tenant.assetId == selectedAssetId)
         .toList();
 
-    await showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Edit Transaction'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: amountController,
-                    decoration: const InputDecoration(
-                      labelText: 'Amount',
-                      prefixText: '\$',
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Amount is required';
-                      }
-                      if (double.tryParse(value) == null) {
-                        return 'Please enter a valid number';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedAssetId,
-                    decoration: const InputDecoration(labelText: 'Property'),
-                    items: assets
-                        .map((asset) => DropdownMenuItem(
-                              value: asset.id,
-                              child: Text(asset.name),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          selectedAssetId = value;
-                          selectedTenantId = null;
-                        });
-                      }
-                    },
-                    validator: (value) =>
-                        value == null ? 'Property is required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedTenantId,
-                    decoration: const InputDecoration(labelText: 'Tenant'),
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('No tenant'),
-                      ),
-                      ...tenants.map(
-                        (tenant) => DropdownMenuItem(
-                          value: tenant.id,
-                          child: Text(tenant.name),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      selectedTenantId = value;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedType,
-                    decoration: const InputDecoration(labelText: 'Type'),
-                    items: ['rent', 'deposit', 'maintenance', 'other']
-                        .map((type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        selectedType = value;
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedStatus,
-                    decoration: const InputDecoration(labelText: 'Status'),
-                    items: ['pending', 'completed', 'cancelled']
-                        .map((status) => DropdownMenuItem(
-                              value: status,
-                              child: Text(status),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        selectedStatus = value;
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                    maxLines: 3,
-                    validator: (value) => value?.isEmpty ?? true
-                        ? 'Description is required'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  ListTile(
-                    title: const Text('Date'),
-                    subtitle: Text(DateFormat('MMM d, y').format(selectedDate)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (date != null) {
-                        setState(() {
-                          selectedDate = date;
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() ?? false) {
-                  final transactionData = {
-                    'asset_id': selectedAssetId,
-                    'tenant_id': selectedTenantId,
-                    'amount': double.parse(amountController.text),
-                    'type': selectedType,
-                    'status': selectedStatus,
-                    'description': descriptionController.text,
-                    'date': selectedDate.millisecondsSinceEpoch,
-                  };
-                  dataProvider.updateTransaction(
-                      transaction.id, transactionData);
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
+    // Create tenant dropdown items
+    final List<DropdownMenuItem<String?>> tenantItems = [
+      const DropdownMenuItem(
+        value: null,
+        child: Text('No tenant'),
+      ),
+      ...tenants.map(
+        (tenant) => DropdownMenuItem<String?>(
+          value: tenant.id,
+          child: Text(tenant.name),
         ),
       ),
-    );
+    ];
+
+    // If the current tenant is not in the list, add it
+    if (selectedTenantId != null &&
+        !tenants.any((t) => t.id == selectedTenantId)) {
+      final currentTenant = dataProvider.tenants.firstWhere(
+          (t) => t.id == selectedTenantId,
+          orElse: () => Tenant.empty());
+      if (currentTenant.id.isNotEmpty) {
+        tenantItems.add(
+          DropdownMenuItem<String?>(
+            value: currentTenant.id,
+            child: Text(currentTenant.name),
+          ),
+        );
+      }
+    }
+
+    // If no tenants are available for the selected asset, reset tenant selection
+    if (tenants.isEmpty && selectedTenantId != null) {
+      selectedTenantId = null;
+    }
+
+    try {
+      await showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Edit Transaction'),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: amountController,
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        prefixText: '\$',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Amount is required';
+                        }
+                        if (double.tryParse(value) == null) {
+                          return 'Please enter a valid number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedAssetId,
+                      decoration: const InputDecoration(labelText: 'Property'),
+                      items: assets
+                          .map((asset) => DropdownMenuItem(
+                                value: asset.id,
+                                child: Text(
+                                    '${asset.name} - Unit ${asset.unitNumber}'),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            selectedAssetId = value;
+                            selectedTenantId = null;
+                            final updatedTenants = dataProvider.tenants
+                                .where((tenant) => tenant.assetId == value)
+                                .toList();
+                            tenantItems.clear();
+                            tenantItems.add(
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('No tenant'),
+                              ),
+                            );
+                            tenantItems.addAll(
+                              updatedTenants.map(
+                                (tenant) => DropdownMenuItem<String?>(
+                                  value: tenant.id,
+                                  child: Text(tenant.name),
+                                ),
+                              ),
+                            );
+                          });
+                        }
+                      },
+                      validator: (value) =>
+                          value == null ? 'Property is required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String?>(
+                      value: selectedTenantId,
+                      decoration: const InputDecoration(labelText: 'Tenant'),
+                      items: tenantItems,
+                      onChanged: (value) {
+                        setState(() {
+                          selectedTenantId = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'advance',
+                          child: Text('Advance'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'expense',
+                          child: Text('Expense'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'rent',
+                          child: Text('Rent'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            selectedType = value;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedStatus,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: ['pending', 'completed', 'cancelled']
+                          .map((status) => DropdownMenuItem(
+                                value: status,
+                                child: Text(status),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          selectedStatus = value;
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: descriptionController,
+                      decoration:
+                          const InputDecoration(labelText: 'Description'),
+                      maxLines: 3,
+                      validator: (value) => value?.isEmpty ?? true
+                          ? 'Description is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      title: const Text('Date'),
+                      subtitle:
+                          Text(DateFormat('MMM d, y').format(selectedDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (date != null) {
+                          setState(() {
+                            selectedDate = date;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (formKey.currentState?.validate() ?? false) {
+                    try {
+                      final transactionData = {
+                        'asset_id': selectedAssetId,
+                        'tenant_id': selectedTenantId,
+                        'amount': double.parse(amountController.text),
+                        'type': selectedType,
+                        'status': selectedStatus,
+                        'description': descriptionController.text,
+                        'date': selectedDate.millisecondsSinceEpoch,
+                      };
+                      await dataProvider.updateTransaction(
+                          transaction.id, transactionData);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Transaction updated successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error updating transaction: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showDeleteConfirmationDialog(
       BuildContext context, Transaction transaction) async {
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Transaction'),
-        content: Text(
-            'Are you sure you want to delete this ${transaction.type} transaction?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<DataProvider>().deleteTransaction(transaction.id);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+    try {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Transaction'),
+          content: Text(
+              'Are you sure you want to delete this ${transaction.type} transaction?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
             ),
-            child: const Text('Delete'),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == true && context.mounted) {
+        try {
+          await context.read<DataProvider>().deleteTransaction(transaction.id);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Transaction deleted successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error deleting transaction: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 }

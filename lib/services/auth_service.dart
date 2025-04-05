@@ -42,17 +42,12 @@ class AuthService {
       developer.log(
           'Google Sign-In successful, user email: ${googleUser.email}',
           name: 'AuthService');
-      developer.log('Google Sign-In ID: ${googleUser.id}', name: 'AuthService');
 
       try {
         // Obtain the auth details from the request
         developer.log('Getting Google auth details', name: 'AuthService');
         final GoogleSignInAuthentication googleAuth =
             await googleUser.authentication;
-        developer.log('Got access token: ${googleAuth.accessToken != null}',
-            name: 'AuthService');
-        developer.log('Got ID token: ${googleAuth.idToken != null}',
-            name: 'AuthService');
 
         // Create a new credential
         developer.log('Creating Firebase credential', name: 'AuthService');
