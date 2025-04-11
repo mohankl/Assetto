@@ -111,46 +111,55 @@ class MyApp extends StatelessWidget {
         title: 'Assetto',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.teal,
-            primary: Colors.teal,
-            secondary: Colors.tealAccent,
-            background: Colors.teal.shade50,
-          ),
-          useMaterial3: true,
+          primarySwatch: Colors.teal,
+          scaffoldBackgroundColor: Colors.white,
           appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.teal,
-            foregroundColor: Colors.white,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.teal,
             elevation: 0,
+          ),
+          cardTheme: const CardTheme(
+            color: Colors.white,
+            elevation: 0,
+            margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+          tabBarTheme: const TabBarTheme(
+            labelColor: Colors.teal,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.teal,
           ),
           floatingActionButtonTheme: const FloatingActionButtonThemeData(
             backgroundColor: Colors.teal,
             foregroundColor: Colors.white,
           ),
-          bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-            backgroundColor: Colors.teal,
-            selectedItemColor: Colors.white,
-            unselectedItemColor: Colors.white70,
-          ),
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.teal,
               foregroundColor: Colors.white,
-              elevation: 2,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
           ),
-          cardTheme: CardTheme(
-            color: Colors.white,
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.teal,
             ),
           ),
-          scaffoldBackgroundColor: Colors.teal.shade50,
+          inputDecorationTheme: InputDecorationTheme(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.teal),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.teal, width: 2),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.teal),
+            ),
+          ),
         ),
         home: const AuthWrapper(),
       ),

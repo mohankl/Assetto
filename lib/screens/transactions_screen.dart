@@ -6,8 +6,34 @@ import '../models/transaction.dart';
 import '../models/tenant.dart';
 import '../models/asset.dart';
 
-class TransactionsScreen extends StatelessWidget {
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1)}";
+  }
+}
+
+class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
+
+  @override
+  State<TransactionsScreen> createState() => _TransactionsScreenState();
+}
+
+class _TransactionsScreenState extends State<TransactionsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +42,32 @@ class TransactionsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transactions'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(
+              child: Text(
+                'Completed',
+                style: const TextStyle(
+                  color: Colors.teal,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            Tab(
+              child: Text(
+                'Pending',
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+          indicatorColor: Theme.of(context).primaryColor,
+          labelColor: Theme.of(context).primaryColor,
+          unselectedLabelColor: Colors.grey,
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddTransactionDialog(context),
@@ -43,60 +95,81 @@ class TransactionsScreen extends StatelessWidget {
                     ],
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: () => dataProvider.initialize(),
-                  child: _buildGroupedTransactions(context, dataProvider),
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildGroupedTransactions(
+                        context, dataProvider, 'completed'),
+                    _buildGroupedTransactions(context, dataProvider, 'pending'),
+                  ],
                 ),
     );
   }
 
   Widget _buildGroupedTransactions(
-      BuildContext context, DataProvider dataProvider) {
+      BuildContext context, DataProvider dataProvider, String status) {
+    // Filter transactions by status
+    final filteredTransactions = dataProvider.transactions
+        .where((transaction) => transaction.status.toLowerCase() == status)
+        .toList();
+
     // Group transactions by property
     final Map<String, List<Transaction>> groupedTransactions = {};
 
-    for (final transaction in dataProvider.transactions) {
+    for (final transaction in filteredTransactions) {
       final asset = dataProvider.assets.firstWhere(
         (asset) => asset.id == transaction.assetId,
         orElse: () => Asset.empty(),
       );
 
-      if (!groupedTransactions.containsKey(asset.name)) {
-        groupedTransactions[asset.name] = [];
+      if (!groupedTransactions.containsKey(asset.address)) {
+        groupedTransactions[asset.address] = [];
       }
-      groupedTransactions[asset.name]!.add(transaction);
+      groupedTransactions[asset.address]!.add(transaction);
     }
 
     // Sort properties alphabetically
     final sortedProperties = groupedTransactions.keys.toList()..sort();
 
-    return ListView.builder(
-      itemCount: sortedProperties.length,
-      itemBuilder: (context, index) {
-        final propertyName = sortedProperties[index];
-        final transactions = groupedTransactions[propertyName]!;
+    if (filteredTransactions.isEmpty) {
+      return Center(
+        child: Text(
+          'No ${status.capitalize()} transactions',
+          style: const TextStyle(color: Colors.grey),
+        ),
+      );
+    }
 
-        // Sort transactions by date (newest first)
-        transactions.sort((a, b) => b.date.compareTo(a.date));
+    return RefreshIndicator(
+      onRefresh: () => dataProvider.initialize(),
+      child: ListView.builder(
+        itemCount: sortedProperties.length,
+        itemBuilder: (context, index) {
+          final propertyAddress = sortedProperties[index];
+          final transactions = groupedTransactions[propertyAddress]!;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                propertyName,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+          // Sort transactions by date (newest first)
+          transactions.sort((a, b) => b.date.compareTo(a.date));
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  propertyAddress,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-            ...transactions.map(
-                (transaction) => _buildTransactionCard(context, transaction)),
-          ],
-        );
-      },
+              ...transactions.map(
+                  (transaction) => _buildTransactionCard(context, transaction)),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -117,23 +190,31 @@ class TransactionsScreen extends StatelessWidget {
     final dateFormat = DateFormat('MMM d, y');
     final currencyFormat = NumberFormat.currency(symbol: '\$');
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+      ),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        title: Row(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              currencyFormat.format(transaction.amount),
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: transaction.amount >= 0 ? Colors.green : Colors.red,
+              dateFormat.format(
+                  DateTime.fromMillisecondsSinceEpoch(transaction.date)),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(height: 4),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: _getStatusColor(transaction.status).withAlpha(25),
                 borderRadius: BorderRadius.circular(4),
@@ -142,65 +223,64 @@ class TransactionsScreen extends StatelessWidget {
                 transaction.status,
                 style: TextStyle(
                   color: _getStatusColor(transaction.status),
+                  fontSize: 10,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
           ],
         ),
-        subtitle: Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.home, size: 16),
-                const SizedBox(width: 8),
-                Text(asset.name),
-              ],
-            ),
-            if (tenant != null) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.person, size: 16),
-                  const SizedBox(width: 8),
-                  Text(tenant.name),
-                ],
+            Text(
+              asset.name,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.description, size: 16),
-                const SizedBox(width: 8),
-                Expanded(child: Text(transaction.description)),
-              ],
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.calendar_today, size: 16),
-                const SizedBox(width: 8),
-                Text(dateFormat.format(
-                    DateTime.fromMillisecondsSinceEpoch(transaction.date))),
-              ],
-            ),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(context, value, transaction),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: Text('Edit'),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Text('Delete'),
+            if (tenant != null)
+              Text(
+                tenant.name,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+            Text(
+              transaction.description,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              currencyFormat.format(transaction.amount),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: transaction.amount >= 0 ? Colors.green : Colors.red,
+              ),
+            ),
+            Text(
+              transaction.type,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        onTap: () => _showEditTransactionDialog(context, transaction),
       ),
     );
   }
