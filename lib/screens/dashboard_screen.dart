@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'dart:developer' as developer;
 import '../models/tenant.dart';
 import '../models/asset.dart';
+import '../models/transaction.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -71,44 +72,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         )
         .length;
 
-    // Find unpaid tenants for the specific month
-    final unpaidTenants = dataProvider.tenants.where((tenant) {
-      // Get all rent transactions for this tenant in the specific month
-      final rentTransactions = dataProvider.transactions.where((t) =>
-          t.tenantId == tenant.id &&
-          t.type.toLowerCase() == 'rent' &&
-          t.status.toLowerCase() == 'completed' &&
-          DateTime.fromMillisecondsSinceEpoch(t.date).year == month.year &&
-          DateTime.fromMillisecondsSinceEpoch(t.date).month == month.month);
-
-      // Tenant is unpaid if they have no completed rent transactions this month
-      // and they are currently assigned to an asset
-      return rentTransactions.isEmpty && tenant.assetId.isNotEmpty;
-    }).toList();
-
-    // Group unpaid tenants by asset ID to avoid duplicates
-    final Map<String, List<Tenant>> unpaidTenantsByAsset = {};
-    for (final tenant in unpaidTenants) {
-      final asset = assets.firstWhere(
-        (asset) => asset.id == tenant.assetId,
-        orElse: () => Asset(
-          id: '',
-          name: 'Unknown Property',
-          address: 'No address provided',
-          type: 'Unknown',
-          status: 'Unknown',
-          unitNumber: '',
-          rentAmount: 0.0,
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-      if (!unpaidTenantsByAsset.containsKey(asset.address)) {
-        unpaidTenantsByAsset[asset.address] = [];
-      }
-      unpaidTenantsByAsset[asset.address]!.add(tenant);
-    }
-
     // Calculate income and expenses for the specific month
     final monthlyTransactions = transactions.where((t) {
       final transactionDate = DateTime.fromMillisecondsSinceEpoch(t.date);
@@ -132,38 +95,52 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final pendingIncome = expectedCashFlow - totalIncome;
 
-    // Find tenants with pending rent transactions
-    final pendingDuesTenants = dataProvider.tenants.where((tenant) {
-      // Get all pending rent transactions for this tenant
-      final pendingRentTransactions = dataProvider.transactions.where((t) =>
-          t.tenantId == tenant.id &&
-          t.type.toLowerCase() == 'rent' &&
-          t.status.toLowerCase() == 'pending' &&
-          DateTime.fromMillisecondsSinceEpoch(t.date).isBefore(month));
-      return pendingRentTransactions.isNotEmpty && tenant.assetId.isNotEmpty;
-    }).toList();
+    // Find unpaid tenants and their pending transactions
+    final Map<String, List<dynamic>> unpaidTenantsWithTransactions = {};
+    final Map<String, double> accumulatedPendingAmounts = {};
 
-    // Group pending dues tenants by asset ID
-    final Map<String, List<Tenant>> pendingDuesByAsset = {};
-    for (final tenant in pendingDuesTenants) {
-      final asset = assets.firstWhere(
-        (asset) => asset.id == tenant.assetId,
-        orElse: () => Asset(
-          id: '',
-          name: 'Unknown Property',
-          address: 'No address provided',
-          type: 'Unknown',
-          status: 'Unknown',
-          unitNumber: '',
-          rentAmount: 0.0,
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-      if (!pendingDuesByAsset.containsKey(asset.address)) {
-        pendingDuesByAsset[asset.address] = [];
+    for (final tenant in tenants) {
+      if (tenant.assetId.isEmpty) continue;
+
+      final pendingTransactions = transactions.where((t) {
+        final transactionDate = DateTime.fromMillisecondsSinceEpoch(t.date);
+        return t.tenantId == tenant.id &&
+            t.type.toLowerCase() == 'rent' &&
+            transactionDate
+                .isBefore(DateTime(month.year, month.month + 1, 1)) &&
+            t.status.toLowerCase() == 'pending';
+      }).toList();
+
+      if (pendingTransactions.isNotEmpty) {
+        final asset = assets.firstWhere(
+          (asset) => asset.id == tenant.assetId,
+          orElse: () => Asset(
+            id: '',
+            name: 'Unknown Property',
+            address: 'No address provided',
+            type: 'Unknown',
+            status: 'Unknown',
+            unitNumber: '',
+            rentAmount: 0.0,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+
+        final accumulatedAmount =
+            pendingTransactions.fold(0.0, (sum, t) => sum + t.amount);
+        accumulatedPendingAmounts[tenant.id] = accumulatedAmount;
+
+        if (!unpaidTenantsWithTransactions.containsKey(asset.address)) {
+          unpaidTenantsWithTransactions[asset.address] = [];
+        }
+        unpaidTenantsWithTransactions[asset.address]!.add({
+          'tenant': tenant,
+          'asset': asset,
+          'transactions': pendingTransactions,
+          'accumulatedAmount': accumulatedAmount,
+        });
       }
-      pendingDuesByAsset[asset.address]!.add(tenant);
     }
 
     return {
@@ -171,10 +148,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       'totalUnits': totalUnits,
       'occupancyRate': occupancyRate,
       'upcomingLeaseEnds': upcomingLeaseEnds,
-      'unpaidTenants': unpaidTenants,
-      'unpaidTenantsByAsset': unpaidTenantsByAsset,
-      'pendingDuesTenants': pendingDuesTenants,
-      'pendingDuesByAsset': pendingDuesByAsset,
+      'unpaidTenantsWithTransactions': unpaidTenantsWithTransactions,
+      'accumulatedPendingAmounts': accumulatedPendingAmounts,
       'totalIncome': totalIncome,
       'totalExpenses': totalExpenses,
       'netIncome': netIncome,
@@ -186,11 +161,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Build dashboard content for a specific month
   Widget _buildMonthlyDashboard(DateTime month) {
     final dataProvider = context.watch<DataProvider>();
-    final assets = dataProvider.assets;
     final stats = _getMonthlyStatistics(month);
 
-    final unpaidTenants = stats['unpaidTenants'] as List;
-    final pendingDuesTenants = stats['pendingDuesTenants'] as List;
+    final unpaidTenantsWithTransactions =
+        stats['unpaidTenantsWithTransactions'] as Map<String, List<dynamic>>;
     final totalIncome = stats['totalIncome'] as double;
     final totalExpenses = stats['totalExpenses'] as double;
     final netIncome = stats['netIncome'] as double;
@@ -201,6 +175,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     final expectedCashFlow = stats['expectedCashFlow'] as double;
     final pendingIncome = expectedCashFlow - totalIncome;
 
+    // Calculate total accumulated unpaid amount
+    final totalUnpaidAmount =
+        unpaidTenantsWithTransactions.values.fold<double>(0.0, (sum, list) {
+      return sum +
+          list.fold<double>(0.0, (innerSum, tenantData) {
+            return innerSum + (tenantData['accumulatedAmount'] as double);
+          });
+    });
+
     developer.log(
         'Dashboard Statistics for ${DateFormat('MMMM yyyy').format(month)}:');
     developer.log('Expected Income: $expectedCashFlow');
@@ -210,7 +193,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     developer.log('Net Income: $netIncome');
     developer.log('Total Transactions: ${stats['monthlyTransactions'].length}');
 
-    final currencyFormat = NumberFormat.currency(symbol: '₹');
+    final currencyFormat = NumberFormat.currency(
+      symbol: '₹',
+      locale: 'en_IN',
+      decimalDigits: 0,
+    );
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -257,84 +244,80 @@ class _DashboardScreenState extends State<DashboardScreen>
           _buildSummaryCard(
             'Alerts',
             [
-              _buildStatRow(
-                'Unpaid Tenants',
-                unpaidTenants.length.toString(),
-                Icons.money_off,
-                color: unpaidTenants.isNotEmpty ? Colors.red : Colors.green,
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatRow(
+                      'Unpaid Tenants',
+                      '${unpaidTenantsWithTransactions.values.fold(0, (sum, list) => sum + list.length)}',
+                      Icons.money_off,
+                      color: unpaidTenantsWithTransactions.isNotEmpty
+                          ? Colors.red
+                          : Colors.green,
+                    ),
+                  ),
+                  if (unpaidTenantsWithTransactions.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withAlpha(25),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        currencyFormat.format(totalUnpaidAmount),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              if (unpaidTenants.isNotEmpty) ...[
+              if (unpaidTenantsWithTransactions.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 const Divider(),
                 const SizedBox(height: 8),
-                // Group unpaid tenants by property
-                ...stats['unpaidTenantsByAsset'].keys.map((address) {
-                  final assetUnpaidTenants =
-                      stats['unpaidTenantsByAsset'][address] as List<Tenant>;
-                  final asset = assets.firstWhere(
-                    (a) => a.address == address,
-                    orElse: () => Asset(
-                      id: '',
-                      name: 'Unknown Property',
-                      address: address,
-                      type: 'Unknown',
-                      status: 'Unknown',
-                      unitNumber: '',
-                      rentAmount: 0.0,
-                      createdAt: DateTime.now().millisecondsSinceEpoch,
-                      updatedAt: DateTime.now().millisecondsSinceEpoch,
-                    ),
-                  );
+                ...unpaidTenantsWithTransactions.keys.map((address) {
+                  final tenantsList =
+                      unpaidTenantsWithTransactions[address] as List<dynamic>;
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Property header with unpaid count
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withAlpha(25),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.home, size: 20, color: Colors.red),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                address,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              address,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withAlpha(25),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.red.withAlpha(77),
-                                ),
-                              ),
-                              child: Text(
-                                '${assetUnpaidTenants.length} unpaid',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withAlpha(25),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${tenantsList.length} unpaid',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.red,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
-                      // List of unpaid tenants for this property
                       Container(
                         margin: const EdgeInsets.only(left: 16.0),
                         decoration: BoxDecoration(
@@ -346,418 +329,112 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                         child: Column(
-                          children: assetUnpaidTenants.map((tenant) {
-                            // Get the asset for this tenant
-                            final tenantAsset = assets.firstWhere(
-                              (a) => a.id == tenant.assetId,
-                              orElse: () => Asset(
-                                id: '',
-                                name: 'Unknown Property',
-                                address: 'Unknown Address',
-                                type: 'Unknown',
-                                status: 'Unknown',
-                                unitNumber: '',
-                                rentAmount: 0.0,
-                                createdAt:
-                                    DateTime.now().millisecondsSinceEpoch,
-                                updatedAt:
-                                    DateTime.now().millisecondsSinceEpoch,
-                              ),
-                            );
+                          children: tenantsList.map((tenantData) {
+                            final tenant = tenantData['tenant'] as Tenant;
+                            final asset = tenantData['asset'] as Asset;
+                            final transactions =
+                                tenantData['transactions'] as List;
+                            final accumulatedAmount =
+                                tenantData['accumulatedAmount'] as double;
 
-                            // Get all rent transactions for this tenant (for tabbed view)
-                            final rentTransactions = dataProvider.transactions
-                                .where((t) =>
-                                    t.tenantId == tenant.id &&
-                                    t.type.toLowerCase() == 'rent')
-                                .toList()
-                              ..sort((a, b) => b.date.compareTo(a.date));
-
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 8.0, bottom: 8.0),
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8.0),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.person,
-                                          size: 16, color: Colors.red),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                  Container(
+                                    padding: const EdgeInsets.all(8.0),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withAlpha(10),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
                                           children: [
-                                            Row(
+                                            Text(
+                                              tenant.name,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              currencyFormat
+                                                  .format(accumulatedAmount),
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Text(
+                                          'Unit ${asset.unitNumber}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        ...transactions.map((transaction) {
+                                          return Container(
+                                            margin: const EdgeInsets.only(
+                                                left: 16.0, bottom: 4.0),
+                                            padding: const EdgeInsets.all(8.0),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  Colors.orange.withAlpha(10),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
                                               children: [
                                                 Text(
-                                                  tenant.name,
+                                                  DateFormat('MMM yyyy').format(
+                                                    DateTime
+                                                        .fromMillisecondsSinceEpoch(
+                                                            transaction.date),
+                                                  ),
                                                   style: const TextStyle(
-                                                    fontSize: 14,
+                                                    fontSize: 12,
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Text(
-                                                  '₹${tenantAsset.rentAmount.toStringAsFixed(0)}',
+                                                  currencyFormat.format(
+                                                      transaction.amount),
                                                   style: const TextStyle(
-                                                    fontSize: 14,
+                                                    fontSize: 12,
                                                     fontWeight: FontWeight.bold,
-                                                    color: Colors.red,
+                                                    color: Colors.orange,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            Text(
-                                              'Unit ${tenantAsset.unitNumber}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (rentTransactions.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    DefaultTabController(
-                                      length: rentTransactions.length,
-                                      child: Column(
-                                        children: [
-                                          TabBar(
-                                            isScrollable: true,
-                                            labelColor: Colors.red,
-                                            unselectedLabelColor: Colors.grey,
-                                            indicatorColor: Colors.red,
-                                            tabs: rentTransactions.map((t) {
-                                              final date = DateTime
-                                                  .fromMillisecondsSinceEpoch(
-                                                      t.date);
-                                              return Tab(
-                                                text:
-                                                    '${DateFormat('MMM yyyy').format(date)}',
-                                              );
-                                            }).toList(),
-                                          ),
-                                          SizedBox(
-                                            height: 60,
-                                            child: TabBarView(
-                                              children: rentTransactions
-                                                  .map((transaction) {
-                                                return Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(8.0),
-                                                  child: Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              '₹${transaction.amount.toStringAsFixed(0)}',
-                                                              style:
-                                                                  const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                            ),
-                                                            Text(
-                                                              transaction.status
-                                                                  .toUpperCase(),
-                                                              style: TextStyle(
-                                                                color: _getStatusColor(
-                                                                    transaction
-                                                                        .status),
-                                                                fontSize: 12,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      if (transaction
-                                                          .description
-                                                          .isNotEmpty)
-                                                        Text(
-                                                          transaction
-                                                              .description,
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            color: Colors
-                                                                .grey[600],
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                          );
+                                        }).toList(),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ],
                               ),
                             );
                           }).toList(),
                         ),
                       ),
-                      const SizedBox(height: 12),
                     ],
                   );
-                }),
+                }).toList(),
               ],
-              const SizedBox(height: 16),
-              _buildStatRow(
-                'Pending Old Dues',
-                pendingDuesTenants.length.toString(),
-                Icons.pending_actions,
-                color: pendingDuesTenants.isNotEmpty
-                    ? Colors.orange
-                    : Colors.green,
-              ),
-              if (pendingDuesTenants.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Divider(),
-                const SizedBox(height: 8),
-                // Group pending dues tenants by property
-                ...stats['pendingDuesByAsset'].keys.map((address) {
-                  final assetPendingTenants =
-                      stats['pendingDuesByAsset'][address] as List<Tenant>;
-                  final asset = assets.firstWhere(
-                    (a) => a.address == address,
-                    orElse: () => Asset(
-                      id: '',
-                      name: 'Unknown Property',
-                      address: address,
-                      type: 'Unknown',
-                      status: 'Unknown',
-                      unitNumber: '',
-                      rentAmount: 0.0,
-                      createdAt: DateTime.now().millisecondsSinceEpoch,
-                      updatedAt: DateTime.now().millisecondsSinceEpoch,
-                    ),
-                  );
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Property header with pending count
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withAlpha(25),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.home,
-                                size: 20, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                address,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withAlpha(25),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.orange.withAlpha(77),
-                                ),
-                              ),
-                              child: Text(
-                                '${assetPendingTenants.length} pending',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.orange,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // List of pending tenants for this property
-                      Container(
-                        margin: const EdgeInsets.only(left: 16.0),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            left: BorderSide(
-                              color: Colors.orange.withAlpha(100),
-                              width: 1.0,
-                            ),
-                          ),
-                        ),
-                        child: Column(
-                          children: assetPendingTenants.map((tenant) {
-                            // Get all pending rent transactions for this tenant
-                            final pendingTransactions = dataProvider
-                                .transactions
-                                .where((t) =>
-                                    t.tenantId == tenant.id &&
-                                    t.type.toLowerCase() == 'rent' &&
-                                    t.status.toLowerCase() == 'pending')
-                                .toList()
-                              ..sort((a, b) => b.date.compareTo(a.date));
-
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 8.0, bottom: 8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.person,
-                                          size: 16, color: Colors.orange),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  tenant.name,
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Text(
-                                                  '₹${pendingTransactions.fold<double>(0, (sum, t) => sum + t.amount).toStringAsFixed(0)}',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.red,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            Text(
-                                              'Unit ${asset.unitNumber}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (pendingTransactions.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    DefaultTabController(
-                                      length: pendingTransactions.length,
-                                      child: Column(
-                                        children: [
-                                          TabBar(
-                                            isScrollable: true,
-                                            labelColor: Colors.orange,
-                                            unselectedLabelColor: Colors.grey,
-                                            indicatorColor: Colors.orange,
-                                            tabs: pendingTransactions.map((t) {
-                                              final date = DateTime
-                                                  .fromMillisecondsSinceEpoch(
-                                                      t.date);
-                                              return Tab(
-                                                text:
-                                                    '${DateFormat('MMM yyyy').format(date)}',
-                                              );
-                                            }).toList(),
-                                          ),
-                                          SizedBox(
-                                            height: 60,
-                                            child: TabBarView(
-                                              children: pendingTransactions
-                                                  .map((transaction) {
-                                                return Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(8.0),
-                                                  child: Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              '₹${transaction.amount.toStringAsFixed(0)}',
-                                                              style:
-                                                                  const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                            ),
-                                                            Text(
-                                                              transaction.status
-                                                                  .toUpperCase(),
-                                                              style: TextStyle(
-                                                                color: _getStatusColor(
-                                                                    transaction
-                                                                        .status),
-                                                                fontSize: 12,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      if (transaction
-                                                          .description
-                                                          .isNotEmpty)
-                                                        Text(
-                                                          transaction
-                                                              .description,
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            color: Colors
-                                                                .grey[600],
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  );
-                }),
-              ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
               _buildStatRow(
                 'Upcoming Lease Ends',
                 upcomingLeaseEnds.toString(),
@@ -897,10 +574,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.3),
-          width: 1.0,
-        ),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -958,5 +631,360 @@ class _DashboardScreenState extends State<DashboardScreen>
       default:
         return Colors.grey;
     }
+  }
+
+  Widget _buildTenantsList(BuildContext context) {
+    final tenants = context.read<DataProvider>().tenants;
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Theme.of(context).primaryColor.withOpacity(0.1),
+          child: Row(
+            children: [
+              Icon(
+                Icons.people,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Tenants',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: tenants.length,
+            itemBuilder: (context, index) {
+              final tenant = tenants[index];
+              final asset = context.read<DataProvider>().assets.firstWhere(
+                    (a) => a.id == tenant.assetId,
+                    orElse: () => Asset(
+                      id: '',
+                      name: 'Unknown Asset',
+                      address: 'Unknown Location',
+                      type: 'residential',
+                      status: 'active',
+                      unitNumber: '',
+                      rentAmount: 0.0,
+                      createdAt: DateTime.now().millisecondsSinceEpoch,
+                      updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  );
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  title: Text(tenant.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(asset.name),
+                      Text(asset.address),
+                      Text('Phone: ${tenant.phone}'),
+                    ],
+                  ),
+                  trailing: Text(
+                    '₹${asset.rentAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAssetsList(BuildContext context) {
+    final assets = context.read<DataProvider>().assets;
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Theme.of(context).primaryColor.withOpacity(0.1),
+          child: Row(
+            children: [
+              Icon(
+                Icons.business,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Assets',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: assets.length,
+            itemBuilder: (context, index) {
+              final asset = assets[index];
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  title: Text(asset.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(asset.address),
+                      Text('Type: ${asset.type.capitalize()}'),
+                      Text('Status: ${asset.status.capitalize()}'),
+                    ],
+                  ),
+                  trailing: Text(
+                    '₹${asset.rentAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionsList(BuildContext context) {
+    final transactions = context.read<DataProvider>().transactions;
+
+    // Group transactions by month and year
+    final Map<String, List<Transaction>> groupedTransactions = {};
+    for (final transaction in transactions) {
+      final date = DateTime.fromMillisecondsSinceEpoch(transaction.date);
+      final monthYear = '${_getMonthName(date.month)} ${date.year}';
+      if (!groupedTransactions.containsKey(monthYear)) {
+        groupedTransactions[monthYear] = [];
+      }
+      groupedTransactions[monthYear]!.add(transaction);
+    }
+
+    // Sort months in descending order
+    final sortedMonths = groupedTransactions.keys.toList()
+      ..sort((a, b) {
+        final dateA = DateTime.parse('1 ${a.split(' ')[0]} ${a.split(' ')[1]}');
+        final dateB = DateTime.parse('1 ${b.split(' ')[0]} ${b.split(' ')[1]}');
+        return dateB.compareTo(dateA);
+      });
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Theme.of(context).primaryColor.withOpacity(0.1),
+          child: Row(
+            children: [
+              Icon(
+                Icons.receipt,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Transactions',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: sortedMonths.length,
+            itemBuilder: (context, monthIndex) {
+              final monthYear = sortedMonths[monthIndex];
+              final monthTransactions = groupedTransactions[monthYear]!;
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  children: [
+                    ListTile(
+                      title: Text(
+                        monthYear,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${monthTransactions.length} transactions',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                    DefaultTabController(
+                      length: 2,
+                      child: Column(
+                        children: [
+                          TabBar(
+                            tabs: const [
+                              Tab(text: 'Completed'),
+                              Tab(text: 'Pending'),
+                            ],
+                            labelColor: Theme.of(context).primaryColor,
+                            unselectedLabelColor: Colors.grey,
+                            indicatorColor: Theme.of(context).primaryColor,
+                          ),
+                          SizedBox(
+                            height: 300,
+                            child: TabBarView(
+                              children: [
+                                _buildMonthTransactionsList(
+                                  context,
+                                  monthTransactions,
+                                  'completed',
+                                ),
+                                _buildMonthTransactionsList(
+                                  context,
+                                  monthTransactions,
+                                  'pending',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMonthTransactionsList(
+    BuildContext context,
+    List<Transaction> transactions,
+    String status,
+  ) {
+    final filteredTransactions = transactions
+        .where((transaction) => transaction.status.toLowerCase() == status)
+        .toList();
+
+    if (filteredTransactions.isEmpty) {
+      return Center(
+        child: Text(
+          'No ${status.capitalize()} transactions',
+          style: const TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    // Group transactions by asset location
+    final Map<String, List<Transaction>> locationGroups = {};
+    for (final transaction in filteredTransactions) {
+      final asset = context.read<DataProvider>().assets.firstWhere(
+            (a) => a.id == transaction.assetId,
+            orElse: () => Asset(
+              id: '',
+              name: 'Unknown Asset',
+              address: 'Unknown Location',
+              type: 'residential',
+              status: 'active',
+              unitNumber: '',
+              rentAmount: 0.0,
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+      final location = asset.address;
+      if (!locationGroups.containsKey(location)) {
+        locationGroups[location] = [];
+      }
+      locationGroups[location]!.add(transaction);
+    }
+
+    return ListView.builder(
+      itemCount: locationGroups.length,
+      itemBuilder: (context, index) {
+        final location = locationGroups.keys.elementAt(index);
+        final locationTransactions = locationGroups[location]!;
+
+        return ExpansionTile(
+          title: Text(
+            location,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
+          ),
+          children: locationTransactions.map((transaction) {
+            final tenant = context.read<DataProvider>().tenants.firstWhere(
+                  (t) => t.id == transaction.tenantId,
+                  orElse: () => Tenant(
+                    id: '',
+                    name: 'Unknown Tenant',
+                    remarks: '',
+                    phone: '',
+                    aadharNumber: '',
+                    aadharImage: '',
+                    assetId: '',
+                    assetName: '',
+                    leaseStart: DateTime.now().millisecondsSinceEpoch,
+                    leaseEnd: DateTime.now().millisecondsSinceEpoch,
+                    advanceAmount: 0,
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                    updatedAt: DateTime.now().millisecondsSinceEpoch,
+                  ),
+                );
+
+            return ListTile(
+              title: Text(
+                '${transaction.type.capitalize()} - ${tenant.name}',
+                style: const TextStyle(fontSize: 14),
+              ),
+              subtitle: Text(
+                DateFormat('dd MMM').format(
+                  DateTime.fromMillisecondsSinceEpoch(transaction.date),
+                ),
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Text(
+                '₹${transaction.amount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color:
+                      transaction.type == 'income' ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  String _getMonthName(int month) {
+    return DateFormat('MMMM').format(DateTime(2024, month));
+  }
+}
+
+extension StringExtension on String {
+  String capitalize() {
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }
