@@ -894,83 +894,92 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     }
 
-    // Group transactions by asset location
-    final Map<String, List<Transaction>> locationGroups = {};
+    // Group by asset address
+    final Map<String, List<Transaction>> addressGroups = {};
     for (final transaction in filteredTransactions) {
       final asset = context.read<DataProvider>().assets.firstWhere(
             (a) => a.id == transaction.assetId,
-            orElse: () => Asset(
-              id: '',
-              name: 'Unknown Asset',
-              address: 'Unknown Location',
-              type: 'residential',
-              status: 'active',
-              unitNumber: '',
-              rentAmount: 0.0,
-              createdAt: DateTime.now().millisecondsSinceEpoch,
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
+            orElse: () => Asset.empty(),
           );
-      final location = asset.address;
-      if (!locationGroups.containsKey(location)) {
-        locationGroups[location] = [];
+      final address = asset.address;
+      if (!addressGroups.containsKey(address)) {
+        addressGroups[address] = [];
       }
-      locationGroups[location]!.add(transaction);
+      addressGroups[address]!.add(transaction);
     }
 
+    // Sort addresses alphabetically
+    final sortedAddresses = addressGroups.keys.toList()..sort();
+
     return ListView.builder(
-      itemCount: locationGroups.length,
+      itemCount: sortedAddresses.length,
       itemBuilder: (context, index) {
-        final location = locationGroups.keys.elementAt(index);
-        final locationTransactions = locationGroups[location]!;
+        final address = sortedAddresses[index];
+        final addressTransactions = addressGroups[address]!;
+
+        // Group transactions by month and year
+        final Map<String, List<Transaction>> monthYearGroups = {};
+        for (final transaction in addressTransactions) {
+          final date = DateTime.fromMillisecondsSinceEpoch(transaction.date);
+          final monthYear = '${_getMonthName(date.month)} ${date.year}';
+          if (!monthYearGroups.containsKey(monthYear)) {
+            monthYearGroups[monthYear] = [];
+          }
+          monthYearGroups[monthYear]!.add(transaction);
+        }
+
+        // Sort months in descending order
+        final sortedMonths = monthYearGroups.keys.toList()
+          ..sort((a, b) {
+            final dateA =
+                DateTime.parse('1 ${a.split(' ')[0]} ${a.split(' ')[1]}');
+            final dateB =
+                DateTime.parse('1 ${b.split(' ')[0]} ${b.split(' ')[1]}');
+            return dateB.compareTo(dateA);
+          });
 
         return ExpansionTile(
-          title: Text(
-            location,
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
-          ),
-          children: locationTransactions.map((transaction) {
-            final tenant = context.read<DataProvider>().tenants.firstWhere(
-                  (t) => t.id == transaction.tenantId,
-                  orElse: () => Tenant(
-                    id: '',
-                    name: 'Unknown Tenant',
-                    remarks: '',
-                    phone: '',
-                    aadharNumber: '',
-                    aadharImage: '',
-                    assetId: '',
-                    assetName: '',
-                    leaseStart: DateTime.now().millisecondsSinceEpoch,
-                    leaseEnd: DateTime.now().millisecondsSinceEpoch,
-                    advanceAmount: 0,
-                    createdAt: DateTime.now().millisecondsSinceEpoch,
-                    updatedAt: DateTime.now().millisecondsSinceEpoch,
+          title: Text(address),
+          children: sortedMonths.map((monthYear) {
+            final monthTransactions = monthYearGroups[monthYear]!;
+
+            // Sort transactions by date (newest first)
+            monthTransactions.sort((a, b) => b.date.compareTo(a.date));
+
+            return ExpansionTile(
+              title: Text(monthYear),
+              children: monthTransactions.map((transaction) {
+                final asset = context.read<DataProvider>().assets.firstWhere(
+                      (a) => a.id == transaction.assetId,
+                      orElse: () => Asset.empty(),
+                    );
+                final tenant = transaction.tenantId != null
+                    ? context.read<DataProvider>().tenants.firstWhere(
+                          (t) => t.id == transaction.tenantId,
+                          orElse: () => Tenant.empty(),
+                        )
+                    : null;
+
+                return ListTile(
+                  title: Text(
+                      '${transaction.type.capitalize()} - ${tenant?.name ?? 'No Tenant'}'),
+                  subtitle: Column(
+                    children: [
+                      Text(DateFormat('dd MMM').format(
+                          DateTime.fromMillisecondsSinceEpoch(
+                              transaction.date))),
+                      Text(transaction.description),
+                    ],
+                  ),
+                  trailing: Text(
+                    '₹${transaction.amount.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color:
+                          transaction.amount >= 0 ? Colors.green : Colors.red,
+                    ),
                   ),
                 );
-
-            return ListTile(
-              title: Text(
-                '${transaction.type.capitalize()} - ${tenant.name}',
-                style: const TextStyle(fontSize: 14),
-              ),
-              subtitle: Text(
-                DateFormat('dd MMM').format(
-                  DateTime.fromMillisecondsSinceEpoch(transaction.date),
-                ),
-                style: const TextStyle(fontSize: 12),
-              ),
-              trailing: Text(
-                '₹${transaction.amount.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color:
-                      transaction.type == 'income' ? Colors.green : Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              }).toList(),
             );
           }).toList(),
         );
