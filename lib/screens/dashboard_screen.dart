@@ -132,6 +132,40 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final pendingIncome = expectedCashFlow - totalIncome;
 
+    // Find tenants with pending rent transactions
+    final pendingDuesTenants = dataProvider.tenants.where((tenant) {
+      // Get all pending rent transactions for this tenant
+      final pendingRentTransactions = dataProvider.transactions.where((t) =>
+          t.tenantId == tenant.id &&
+          t.type.toLowerCase() == 'rent' &&
+          t.status.toLowerCase() == 'pending' &&
+          DateTime.fromMillisecondsSinceEpoch(t.date).isBefore(month));
+      return pendingRentTransactions.isNotEmpty && tenant.assetId.isNotEmpty;
+    }).toList();
+
+    // Group pending dues tenants by asset ID
+    final Map<String, List<Tenant>> pendingDuesByAsset = {};
+    for (final tenant in pendingDuesTenants) {
+      final asset = assets.firstWhere(
+        (asset) => asset.id == tenant.assetId,
+        orElse: () => Asset(
+          id: '',
+          name: 'Unknown Property',
+          address: 'No address provided',
+          type: 'Unknown',
+          status: 'Unknown',
+          unitNumber: '',
+          rentAmount: 0.0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      if (!pendingDuesByAsset.containsKey(asset.address)) {
+        pendingDuesByAsset[asset.address] = [];
+      }
+      pendingDuesByAsset[asset.address]!.add(tenant);
+    }
+
     return {
       'occupiedUnits': occupiedUnits,
       'totalUnits': totalUnits,
@@ -139,6 +173,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       'upcomingLeaseEnds': upcomingLeaseEnds,
       'unpaidTenants': unpaidTenants,
       'unpaidTenantsByAsset': unpaidTenantsByAsset,
+      'pendingDuesTenants': pendingDuesTenants,
+      'pendingDuesByAsset': pendingDuesByAsset,
       'totalIncome': totalIncome,
       'totalExpenses': totalExpenses,
       'netIncome': netIncome,
@@ -154,6 +190,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final stats = _getMonthlyStatistics(month);
 
     final unpaidTenants = stats['unpaidTenants'] as List;
+    final pendingDuesTenants = stats['pendingDuesTenants'] as List;
     final totalIncome = stats['totalIncome'] as double;
     final totalExpenses = stats['totalExpenses'] as double;
     final netIncome = stats['netIncome'] as double;
@@ -182,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSummaryCard(
-            'Financial Summary',
+            'Monthly Financial Summary',
             [
               _buildStatRow(
                 'Expected Income',
@@ -257,13 +294,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.teal.withAlpha(25),
+                          color: Colors.red.withAlpha(25),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.home,
-                                size: 20, color: Colors.teal),
+                            const Icon(Icons.home, size: 20, color: Colors.red),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -271,7 +307,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.teal,
+                                  color: Colors.red,
                                 ),
                               ),
                             ),
@@ -304,43 +340,412 @@ class _DashboardScreenState extends State<DashboardScreen>
                         decoration: BoxDecoration(
                           border: Border(
                             left: BorderSide(
-                              color: Colors.teal.withAlpha(100),
+                              color: Colors.red.withAlpha(100),
                               width: 1.0,
                             ),
                           ),
                         ),
                         child: Column(
                           children: assetUnpaidTenants.map((tenant) {
+                            // Get the asset for this tenant
+                            final tenantAsset = assets.firstWhere(
+                              (a) => a.id == tenant.assetId,
+                              orElse: () => Asset(
+                                id: '',
+                                name: 'Unknown Property',
+                                address: 'Unknown Address',
+                                type: 'Unknown',
+                                status: 'Unknown',
+                                unitNumber: '',
+                                rentAmount: 0.0,
+                                createdAt:
+                                    DateTime.now().millisecondsSinceEpoch,
+                                updatedAt:
+                                    DateTime.now().millisecondsSinceEpoch,
+                              ),
+                            );
+
+                            // Get all rent transactions for this tenant (for tabbed view)
+                            final rentTransactions = dataProvider.transactions
+                                .where((t) =>
+                                    t.tenantId == tenant.id &&
+                                    t.type.toLowerCase() == 'rent')
+                                .toList()
+                              ..sort((a, b) => b.date.compareTo(a.date));
+
                             return Padding(
                               padding:
                                   const EdgeInsets.only(left: 8.0, bottom: 8.0),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.person,
-                                      size: 16, color: Colors.red),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          tenant.name,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.person,
+                                          size: 16, color: Colors.red),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  tenant.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '₹${tenantAsset.rentAmount.toStringAsFixed(0)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Text(
+                                              'Unit ${tenantAsset.unitNumber}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        Text(
-                                          'Unit ${asset.unitNumber}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
+                                  if (rentTransactions.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    DefaultTabController(
+                                      length: rentTransactions.length,
+                                      child: Column(
+                                        children: [
+                                          TabBar(
+                                            isScrollable: true,
+                                            labelColor: Colors.red,
+                                            unselectedLabelColor: Colors.grey,
+                                            indicatorColor: Colors.red,
+                                            tabs: rentTransactions.map((t) {
+                                              final date = DateTime
+                                                  .fromMillisecondsSinceEpoch(
+                                                      t.date);
+                                              return Tab(
+                                                text:
+                                                    '${DateFormat('MMM yyyy').format(date)}',
+                                              );
+                                            }).toList(),
+                                          ),
+                                          SizedBox(
+                                            height: 60,
+                                            child: TabBarView(
+                                              children: rentTransactions
+                                                  .map((transaction) {
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              '₹${transaction.amount.toStringAsFixed(0)}',
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              transaction.status
+                                                                  .toUpperCase(),
+                                                              style: TextStyle(
+                                                                color: _getStatusColor(
+                                                                    transaction
+                                                                        .status),
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      if (transaction
+                                                          .description
+                                                          .isNotEmpty)
+                                                        Text(
+                                                          transaction
+                                                              .description,
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors
+                                                                .grey[600],
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                }),
+              ],
+              const SizedBox(height: 16),
+              _buildStatRow(
+                'Pending Old Dues',
+                pendingDuesTenants.length.toString(),
+                Icons.pending_actions,
+                color: pendingDuesTenants.isNotEmpty
+                    ? Colors.orange
+                    : Colors.green,
+              ),
+              if (pendingDuesTenants.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 8),
+                // Group pending dues tenants by property
+                ...stats['pendingDuesByAsset'].keys.map((address) {
+                  final assetPendingTenants =
+                      stats['pendingDuesByAsset'][address] as List<Tenant>;
+                  final asset = assets.firstWhere(
+                    (a) => a.address == address,
+                    orElse: () => Asset(
+                      id: '',
+                      name: 'Unknown Property',
+                      address: address,
+                      type: 'Unknown',
+                      status: 'Unknown',
+                      unitNumber: '',
+                      rentAmount: 0.0,
+                      createdAt: DateTime.now().millisecondsSinceEpoch,
+                      updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  );
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Property header with pending count
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withAlpha(25),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.home,
+                                size: 20, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                address,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withAlpha(25),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.orange.withAlpha(77),
+                                ),
+                              ),
+                              child: Text(
+                                '${assetPendingTenants.length} pending',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // List of pending tenants for this property
+                      Container(
+                        margin: const EdgeInsets.only(left: 16.0),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: Colors.orange.withAlpha(100),
+                              width: 1.0,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          children: assetPendingTenants.map((tenant) {
+                            // Get all pending rent transactions for this tenant
+                            final pendingTransactions = dataProvider
+                                .transactions
+                                .where((t) =>
+                                    t.tenantId == tenant.id &&
+                                    t.type.toLowerCase() == 'rent' &&
+                                    t.status.toLowerCase() == 'pending')
+                                .toList()
+                              ..sort((a, b) => b.date.compareTo(a.date));
+
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.only(left: 8.0, bottom: 8.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.person,
+                                          size: 16, color: Colors.orange),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  tenant.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '₹${pendingTransactions.fold<double>(0, (sum, t) => sum + t.amount).toStringAsFixed(0)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Text(
+                                              'Unit ${asset.unitNumber}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (pendingTransactions.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    DefaultTabController(
+                                      length: pendingTransactions.length,
+                                      child: Column(
+                                        children: [
+                                          TabBar(
+                                            isScrollable: true,
+                                            labelColor: Colors.orange,
+                                            unselectedLabelColor: Colors.grey,
+                                            indicatorColor: Colors.orange,
+                                            tabs: pendingTransactions.map((t) {
+                                              final date = DateTime
+                                                  .fromMillisecondsSinceEpoch(
+                                                      t.date);
+                                              return Tab(
+                                                text:
+                                                    '${DateFormat('MMM yyyy').format(date)}',
+                                              );
+                                            }).toList(),
+                                          ),
+                                          SizedBox(
+                                            height: 60,
+                                            child: TabBarView(
+                                              children: pendingTransactions
+                                                  .map((transaction) {
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              '₹${transaction.amount.toStringAsFixed(0)}',
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              transaction.status
+                                                                  .toUpperCase(),
+                                                              style: TextStyle(
+                                                                color: _getStatusColor(
+                                                                    transaction
+                                                                        .status),
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      if (transaction
+                                                          .description
+                                                          .isNotEmpty)
+                                                        Text(
+                                                          transaction
+                                                              .description,
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors
+                                                                .grey[600],
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             );
@@ -489,40 +894,69 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildStatRow(String label, String value, IconData icon,
       {Color? color}) {
-    final displayColor = color ?? Colors.teal;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Colors.grey.withOpacity(0.3),
+          width: 1.0,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+        ],
+      ),
       child: Row(
         children: [
-          Icon(icon, color: displayColor, size: 24),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          Icon(
+            icon,
+            color: color ?? Colors.teal,
+            size: 24,
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: displayColor),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: displayColor,
-              ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: color ?? Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 }

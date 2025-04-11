@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as path;
 import '../models/tenant.dart';
 import '../models/asset.dart';
 
@@ -44,14 +43,60 @@ class TenantsScreen extends StatelessWidget {
                   )
                 : RefreshIndicator(
                     onRefresh: () => dataProvider.initialize(),
-                    child: ListView.builder(
-                      itemCount: dataProvider.tenants.length,
-                      itemBuilder: (context, index) {
-                        final tenant = dataProvider.tenants[index];
-                        return _buildTenantCard(context, tenant);
-                      },
-                    ),
+                    child: _buildGroupedTenants(context, dataProvider),
                   );
+  }
+
+  Widget _buildGroupedTenants(BuildContext context, DataProvider dataProvider) {
+    // Group tenants by asset address
+    final Map<String, List<Tenant>> groupedTenants = {};
+
+    for (final tenant in dataProvider.tenants) {
+      final asset = dataProvider.assets.firstWhere(
+        (asset) => asset.id == tenant.assetId,
+        orElse: () => Asset(
+          id: '',
+          name: 'Unknown Property',
+          address: 'No address provided',
+          type: 'Unknown',
+          status: 'Unknown',
+          unitNumber: '',
+          rentAmount: 0.0,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      final address = asset.address;
+      if (!groupedTenants.containsKey(address)) {
+        groupedTenants[address] = [];
+      }
+      groupedTenants[address]!.add(tenant);
+    }
+
+    return ListView.builder(
+      itemCount: groupedTenants.length,
+      itemBuilder: (context, index) {
+        final address = groupedTenants.keys.elementAt(index);
+        final tenants = groupedTenants[address]!;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ExpansionTile(
+            title: Text(
+              address,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            children: tenants
+                .map((tenant) => _buildTenantCard(context, tenant))
+                .toList(),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildTenantCard(BuildContext context, Tenant tenant) {
@@ -77,111 +122,108 @@ class TenantsScreen extends StatelessWidget {
             .format(DateTime.fromMillisecondsSinceEpoch(tenant.leaseEnd!))
         : 'No end date';
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                tenant.name,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              tenant.name,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _getStatusColor(tenant.leaseEnd).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                _getStatusText(tenant.leaseEnd),
-                style: TextStyle(
-                  color: _getStatusColor(tenant.leaseEnd),
-                  fontWeight: FontWeight.w500,
-                ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _getStatusColor(tenant.leaseEnd).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              _getStatusText(tenant.leaseEnd),
+              style: TextStyle(
+                color: _getStatusColor(tenant.leaseEnd),
+                fontWeight: FontWeight.w500,
               ),
             ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.home, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text('${asset.name} - Unit # ${asset.unitNumber}'),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.home, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Unit # ${asset.unitNumber}'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.phone, size: 16),
+              const SizedBox(width: 8),
+              Text(tenant.phone),
+            ],
+          ),
+          if (tenant.remarks?.isNotEmpty ?? false) ...[
             const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.phone, size: 16),
+                const Icon(Icons.note, size: 16),
                 const SizedBox(width: 8),
-                Text(tenant.phone),
+                Expanded(child: Text(tenant.remarks!)),
               ],
             ),
-            if (tenant.remarks?.isNotEmpty ?? false) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.note, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(tenant.remarks!)),
-                ],
-              ),
-            ],
-            if (tenant.aadharNumber?.isNotEmpty ?? false) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.badge, size: 16),
-                  const SizedBox(width: 8),
-                  Text(tenant.aadharNumber!),
-                ],
-              ),
-            ],
+          ],
+          if (tenant.aadharNumber?.isNotEmpty ?? false) ...[
             const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.calendar_today, size: 16),
+                const Icon(Icons.badge, size: 16),
                 const SizedBox(width: 8),
-                Text('Lease ending: $leaseEndDate'),
+                Text(tenant.aadharNumber!),
               ],
             ),
-            if (tenant.advanceAmount != null) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.payments, size: 16),
-                  const SizedBox(width: 8),
-                  Text('Advance: ₹${tenant.advanceAmount!.toStringAsFixed(2)}'),
-                ],
-              ),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.calendar_today, size: 16),
+              const SizedBox(width: 8),
+              Text('Lease ending: $leaseEndDate'),
             ],
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(context, value, tenant),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: Text('Edit'),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Text('Delete'),
+          ),
+          if (tenant.advanceAmount != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.payments, size: 16),
+                const SizedBox(width: 8),
+                Text('Advance: ₹${tenant.advanceAmount!.toStringAsFixed(2)}'),
+              ],
             ),
           ],
-        ),
+        ],
+      ),
+      trailing: PopupMenuButton<String>(
+        onSelected: (value) => _handleMenuAction(context, value, tenant),
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'edit',
+            child: Text('Edit'),
+          ),
+          const PopupMenuItem(
+            value: 'delete',
+            child: Text('Delete'),
+          ),
+        ],
       ),
     );
   }

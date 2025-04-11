@@ -32,16 +32,82 @@ class AssetsScreen extends StatelessWidget {
                       ],
                     ),
                   )
-                : RefreshIndicator(
-                    onRefresh: () => dataProvider.loadAssets(),
-                    child: ListView.builder(
-                      itemCount: dataProvider.assets.length,
-                      itemBuilder: (context, index) {
-                        final asset = dataProvider.assets[index];
-                        return AssetCard(asset: asset);
-                      },
+                : dataProvider.assets.isEmpty
+                    ? const Center(
+                        child: Text('No assets found'),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: () => dataProvider.loadAssets(),
+                        child: _buildGroupedAssets(context, dataProvider),
+                      );
+      },
+    );
+  }
+
+  Widget _buildGroupedAssets(BuildContext context, DataProvider dataProvider) {
+    // Group assets by address
+    final Map<String, List<Asset>> groupedAssets = {};
+
+    for (final asset in dataProvider.assets) {
+      final address = asset.address;
+      if (!groupedAssets.containsKey(address)) {
+        groupedAssets[address] = [];
+      }
+      groupedAssets[address]!.add(asset);
+    }
+
+    // Sort addresses alphabetically
+    final sortedAddresses = groupedAssets.keys.toList()..sort();
+
+    return ListView.builder(
+      itemCount: sortedAddresses.length,
+      itemBuilder: (context, index) {
+        final address = sortedAddresses[index];
+        final assets = groupedAssets[address]!;
+
+        // Sort assets by unit number
+        assets.sort((a, b) => a.unitNumber.compareTo(b.unitNumber));
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ExpansionTile(
+            title: Row(
+              children: [
+                const Icon(Icons.location_on, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    address,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
-                  );
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withAlpha(25),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.teal.withAlpha(77),
+                    ),
+                  ),
+                  child: Text(
+                    '${assets.length} units',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.teal,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            children: assets.map((asset) => AssetCard(asset: asset)).toList(),
+          ),
+        );
       },
     );
   }
@@ -197,7 +263,7 @@ class AssetCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Unit ${asset.unitNumber}',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white70,
                     ),
                   ),
