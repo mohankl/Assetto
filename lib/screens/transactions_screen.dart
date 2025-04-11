@@ -58,17 +58,7 @@ class TransactionsScreen extends StatelessWidget {
     for (final transaction in dataProvider.transactions) {
       final asset = dataProvider.assets.firstWhere(
         (asset) => asset.id == transaction.assetId,
-        orElse: () => Asset(
-          id: '',
-          name: 'Unknown Property',
-          address: 'No address provided',
-          type: 'Unknown',
-          status: 'Unknown',
-          unitNumber: '',
-          rentAmount: 0.0,
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
+        orElse: () => Asset.empty(),
       );
 
       if (!groupedTransactions.containsKey(asset.name)) {
@@ -114,17 +104,7 @@ class TransactionsScreen extends StatelessWidget {
     final dataProvider = context.read<DataProvider>();
     final asset = dataProvider.assets.firstWhere(
       (asset) => asset.id == transaction.assetId,
-      orElse: () => Asset(
-        id: '',
-        name: 'Unknown Property',
-        address: 'No address provided',
-        type: 'Unknown',
-        status: 'Unknown',
-        unitNumber: '',
-        rentAmount: 0.0,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
+      orElse: () => Asset.empty(),
     );
 
     final tenant = transaction.tenantId != null

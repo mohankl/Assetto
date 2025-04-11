@@ -3,7 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_database/firebase_database.dart' as firebase_db;
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'screens/dashboard_screen.dart';
@@ -15,6 +15,7 @@ import 'test/test_asset_data.dart';
 import 'package:intl/intl.dart';
 import 'models/tenant.dart';
 import 'models/asset.dart';
+import 'models/transaction.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -28,13 +29,14 @@ Future<void> initializeFirebase() async {
     developer.log('Firebase initialization completed', name: 'AppInit');
 
     // Set the database URL
-    FirebaseDatabase.instance.databaseURL =
+    firebase_db.FirebaseDatabase.instance.databaseURL =
         'https://assetto-7cad8-default-rtdb.asia-southeast1.firebasedatabase.app';
     developer.log('Database URL set successfully', name: 'AppInit');
 
     // Configure Firebase settings for Android
-    FirebaseDatabase.instance.setPersistenceEnabled(true);
-    FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);
+    firebase_db.FirebaseDatabase.instance.setPersistenceEnabled(true);
+    firebase_db.FirebaseDatabase.instance
+        .setPersistenceCacheSizeBytes(10000000);
     developer.log('Firebase settings configured successfully', name: 'AppInit');
 
     // Enable performance monitoring and analytics
@@ -44,7 +46,7 @@ Future<void> initializeFirebase() async {
         name: 'AppInit');
 
     // Test database connection with timeout
-    final ref = FirebaseDatabase.instance.ref();
+    final ref = firebase_db.FirebaseDatabase.instance.ref();
     try {
       await ref.child('test').get().timeout(
         const Duration(seconds: 5),
@@ -70,7 +72,7 @@ Future<void> initializeFirebase() async {
 Future<void> prefetchCriticalData() async {
   try {
     developer.log('Prefetching critical data...');
-    final ref = FirebaseDatabase.instance.ref();
+    final ref = firebase_db.FirebaseDatabase.instance.ref();
     await Future.wait([
       ref.child('assets').keepSynced(true),
       ref.child('tenants').keepSynced(true),
@@ -853,6 +855,145 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Future<void> _generateMonthlyInvoices(BuildContext context) async {
+    final dataProvider = context.read<DataProvider>();
+    final now = DateTime.now();
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
+
+    // Get all assets with tenants
+    final assetsWithTenants = dataProvider.assets.where((asset) {
+      return dataProvider.tenants.any((tenant) => tenant.assetId == asset.id);
+    }).toList();
+
+    if (assetsWithTenants.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No assets with tenants found'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      for (final asset in assetsWithTenants) {
+        final tenant = dataProvider.tenants.firstWhere(
+          (t) => t.assetId == asset.id,
+          orElse: () => Tenant.empty(),
+        );
+
+        // Check if transaction already exists for this month
+        final existingTransaction = dataProvider.transactions.firstWhere(
+          (t) =>
+              t.assetId == asset.id &&
+              t.tenantId == tenant.id &&
+              t.type.toLowerCase() == 'rent' &&
+              DateTime.fromMillisecondsSinceEpoch(t.date).month == now.month &&
+              DateTime.fromMillisecondsSinceEpoch(t.date).year == now.year,
+          orElse: () => Transaction(
+            id: '',
+            assetId: '',
+            tenantId: null,
+            amount: 0.0,
+            type: 'rent',
+            status: 'pending',
+            description: '',
+            date: lastDayOfMonth.millisecondsSinceEpoch,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+            additionalData: const {},
+          ),
+        );
+
+        if (existingTransaction.id.isEmpty) {
+          final transactionData = {
+            'amount': asset.rentAmount,
+            'asset_id': asset.id,
+            'tenant_id': tenant.id,
+            'type': 'rent',
+            'status': 'pending',
+            'description':
+                '${DateFormat('MMMM yyyy').format(now)} invoice system entry',
+            'date': lastDayOfMonth.millisecondsSinceEpoch,
+          };
+          await dataProvider.addTransaction(transactionData);
+          developer.log(
+              'Generated month-end transaction for asset: ${asset.name}, tenant: ${tenant.name}');
+        } else {
+          developer.log(
+              'Month-end transaction already exists for asset: ${asset.name}, tenant: ${tenant.name}');
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monthly invoices generated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      developer.log('Error generating month-end transactions: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating invoices: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _rollbackMonthlyInvoices(BuildContext context) async {
+    final dataProvider = context.read<DataProvider>();
+    final now = DateTime.now();
+
+    try {
+      // Find all transactions created by the invoice system for the current month
+      final transactionsToDelete =
+          dataProvider.transactions.where((transaction) {
+        return transaction.type.toLowerCase() == 'rent' &&
+            transaction.status.toLowerCase() == 'pending' &&
+            transaction.description.contains(
+                '${DateFormat('MMMM yyyy').format(now)} invoice system entry') &&
+            DateTime.fromMillisecondsSinceEpoch(transaction.date).month ==
+                now.month &&
+            DateTime.fromMillisecondsSinceEpoch(transaction.date).year ==
+                now.year;
+      }).toList();
+
+      if (transactionsToDelete.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No monthly invoices found to rollback'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Delete each transaction
+      for (final transaction in transactionsToDelete) {
+        await dataProvider.deleteTransaction(transaction.id);
+        developer.log('Rolled back transaction: ${transaction.id}');
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Successfully rolled back ${transactionsToDelete.length} monthly invoices'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      developer.log('Error rolling back monthly invoices: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error rolling back invoices: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     developer.log('Building MainScreen with selected index: $_selectedIndex');
@@ -874,18 +1015,20 @@ class _MainScreenState extends State<MainScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'test_assets') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const TestAssetData()),
-                );
+              if (value == 'generate_invoices') {
+                _generateMonthlyInvoices(context);
+              } else if (value == 'rollback_invoices') {
+                _rollbackMonthlyInvoices(context);
               }
             },
             itemBuilder: (context) => [
               const PopupMenuItem(
-                value: 'test_assets',
-                child: Text('Test Asset Data'),
+                value: 'generate_invoices',
+                child: Text('Generate Monthly Invoices'),
+              ),
+              const PopupMenuItem(
+                value: 'rollback_invoices',
+                child: Text('Rollback Monthly Invoices'),
               ),
             ],
           ),
