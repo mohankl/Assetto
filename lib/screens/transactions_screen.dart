@@ -44,11 +44,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         title: const Text('Transactions'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: [
+          tabs: const [
             Tab(
               child: Text(
                 'Completed',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.teal,
                   fontWeight: FontWeight.bold,
                 ),
@@ -57,7 +57,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             Tab(
               child: Text(
                 'Pending',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.red,
                   fontWeight: FontWeight.bold,
                 ),

@@ -11,14 +11,11 @@ import 'screens/assets_screen.dart';
 import 'screens/tenants_screen.dart';
 import 'screens/transactions_screen.dart';
 import 'providers/data_provider.dart';
-import 'test/test_asset_data.dart';
 import 'package:intl/intl.dart';
 import 'models/tenant.dart';
-import 'models/asset.dart';
 import 'models/transaction.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 Future<void> initializeFirebase() async {
   try {
@@ -875,6 +872,7 @@ class _MainScreenState extends State<MainScreen> {
     }).toList();
 
     if (assetsWithTenants.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('No assets with tenants found'),
@@ -934,6 +932,7 @@ class _MainScreenState extends State<MainScreen> {
         }
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Monthly invoices generated successfully'),
@@ -942,6 +941,7 @@ class _MainScreenState extends State<MainScreen> {
       );
     } catch (e) {
       developer.log('Error generating month-end transactions: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error generating invoices: $e'),
@@ -970,6 +970,7 @@ class _MainScreenState extends State<MainScreen> {
       }).toList();
 
       if (transactionsToDelete.isEmpty) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No monthly invoices found to rollback'),
@@ -985,6 +986,7 @@ class _MainScreenState extends State<MainScreen> {
         developer.log('Rolled back transaction: ${transaction.id}');
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -994,6 +996,7 @@ class _MainScreenState extends State<MainScreen> {
       );
     } catch (e) {
       developer.log('Error rolling back monthly invoices: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error rolling back invoices: $e'),
