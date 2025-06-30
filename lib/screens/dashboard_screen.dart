@@ -72,11 +72,12 @@ class _DashboardScreenState extends State<DashboardScreen>
         )
         .length;
 
-    // Calculate income and expenses for the specific month
+    // Calculate income and expenses for the specific month (excluding cancelled transactions)
     final monthlyTransactions = transactions.where((t) {
       final transactionDate = DateTime.fromMillisecondsSinceEpoch(t.date);
       return transactionDate.year == month.year &&
-          transactionDate.month == month.month;
+          transactionDate.month == month.month &&
+          t.status.toLowerCase() != 'cancelled';
     }).toList();
 
     final totalIncome = monthlyTransactions
@@ -95,7 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final pendingIncome = expectedCashFlow - totalIncome;
 
-    // Find unpaid tenants and their pending transactions
+    // Find unpaid tenants and their pending transactions (excluding cancelled transactions)
     final Map<String, List<dynamic>> unpaidTenantsWithTransactions = {};
     final Map<String, double> accumulatedPendingAmounts = {};
 
@@ -108,7 +109,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             t.type.toLowerCase() == 'rent' &&
             transactionDate
                 .isBefore(DateTime(month.year, month.month + 1, 1)) &&
-            t.status.toLowerCase() == 'pending';
+            t.status.toLowerCase() == 'pending' &&
+            t.status.toLowerCase() != 'cancelled';
       }).toList();
 
       if (pendingTransactions.isNotEmpty) {
@@ -747,9 +749,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildTransactionsList(BuildContext context) {
     final transactions = context.read<DataProvider>().transactions;
 
-    // Group transactions by month and year
+    // Group transactions by month and year (excluding cancelled transactions)
     final Map<String, List<Transaction>> groupedTransactions = {};
     for (final transaction in transactions) {
+      // Skip cancelled transactions
+      if (transaction.status.toLowerCase() == 'cancelled') continue;
+
       final date = DateTime.fromMillisecondsSinceEpoch(transaction.date);
       final monthYear = '${_getMonthName(date.month)} ${date.year}';
       if (!groupedTransactions.containsKey(monthYear)) {
